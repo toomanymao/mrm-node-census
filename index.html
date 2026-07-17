@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Lunar Front — BTCUSDT</title>
+<title>Lunar Front — BTC/USD</title>
 <style>
   :root{
     --amber:#ffb84d; --amber-dim:#8f6a2e;
@@ -78,7 +78,7 @@
 </div>
 
 <div class="hud panel" id="ticker">
-  <div class="sym">BTCUSDT · LUNAR FRONT<span id="feedmode">SIM</span></div>
+  <div class="sym">BTC/USD · LUNAR FRONT<span id="feedmode">SIM</span></div>
   <div class="px" id="px">—</div>
   <div class="dl" id="dl">anchor ±0.000%</div>
 </div>
@@ -122,14 +122,14 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x04060c);
-scene.fog = new THREE.FogExp2(0x070a12, 0.0032);
+scene.fog = new THREE.FogExp2(0x0a0d16, 0.0028);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 2000);
 camera.position.set(0,40,120);
 
-scene.add(new THREE.AmbientLight(0x2c3140, .85));
-scene.add(new THREE.HemisphereLight(0x39404f, 0x14100b, .5));
-const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.25);
+scene.add(new THREE.AmbientLight(0x4c5468, 1.15));
+scene.add(new THREE.HemisphereLight(0x4a5264, 0x1a150e, .8));
+const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.55);
 sunLight.position.set(-140,150,-120); scene.add(sunLight);
 
 /* ---------------- terrain ---------------- */
@@ -152,13 +152,13 @@ const FIELD_X = 100;
     y *= (1-lane*.75);
     pos.setY(i,y);
     const sh = .55 + y*.055 + rand(-.03,.03);   // grey regolith
-    cols.push(.30*sh, .30*sh, .32*sh);
+    cols.push(.44*sh, .44*sh, .47*sh);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
   g.computeVertexNormals();
   scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({vertexColors:true})));
 
-  const rockMat=new THREE.MeshLambertMaterial({color:0x3d3f45});
+  const rockMat=new THREE.MeshLambertMaterial({color:0x54575f});
   for(let i=0;i<46;i++){
     const x=rand(-210,210), z=rand(-140,140);
     if(Math.abs(x)<115 && Math.abs(z)<62) continue;
@@ -416,8 +416,9 @@ function loadScript(src){ return new Promise((res,rej)=>{
     const loader=new THREE.GLTFLoader();
     const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
     const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
-    deployModel(gB,bulls,null);                                // marines: original colours
-    deployModel(gR,bears,new THREE.Color(0x73f273));           // orks: green wash over the whole model
+    deployModel(gB,bulls,null);   // Space Ranger: original colours
+    deployModel(gR,bears,null);   // Orc Raider is already green — no tint needed
+                                  // (to tint a non-green stand-in: new THREE.Color(0x73f273))
     console.log('Lunar Front: GLB characters deployed');
   }catch(e){
     console.log('Lunar Front: built-in soldiers active — '+(e&&e.message?e.message:e));
@@ -488,30 +489,40 @@ function setFeedBadge(){
   b.textContent = price.live?'LIVE':'SIM';
   b.className = price.live?'live':'';
 }
-/* connect automatically, fall back silently to sim */
+/* connect automatically; the primary source is CoinGecko's BTC/USD price —
+   the same feed the mrmpodcast.com terminal uses, so the number in this
+   battle always matches the number on the widget. Falls back to Binance's
+   BTCUSDT stream if CoinGecko is unreachable, then to simulation. */
 (function autoLive(){
-  let opened=false;
   const seed=v=>{ price.p=price.target=price.emaF=price.emaS=price.anchor=v; };
-  try{
-    const ws=new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
-    price.ws=ws;
-    ws.onmessage=ev=>{
-      const v=parseFloat(JSON.parse(ev.data).p);
-      if(!opened){ opened=true; price.live=true; seed(v); setFeedBadge(); }
+  let ok=false, failed=0;
+  const tick=()=>fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')
+    .then(r=>r.json()).then(j=>{
+      const v=j.bitcoin.usd; failed=0;
+      if(!ok){ ok=true; price.live=true; seed(v); setFeedBadge(); }
       price.target=v;
-    };
-    ws.onclose=()=>{ if(opened){ price.live=false; setFeedBadge(); } };
-    setTimeout(()=>{ if(!opened){ try{ws.close();}catch(e){} fallbackPoll(); } },4000);
-  }catch(e){ fallbackPoll(); }
-  function fallbackPoll(){
-    let ok=false;
-    const tick=()=>fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')
-      .then(r=>r.json()).then(j=>{
-        const v=j.bitcoin.usd;
-        if(!ok){ ok=true; price.live=true; seed(v); setFeedBadge(); }
+    }).catch(()=>{
+      failed++;
+      if(!ok || failed>4){
+        clearInterval(price.poll);
+        if(ok){ price.live=false; setFeedBadge(); }
+        binanceFallback();
+      }
+    });
+  tick(); price.poll=setInterval(tick,10000);
+  function binanceFallback(){
+    let opened=false;
+    try{
+      const ws=new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+      price.ws=ws;
+      ws.onmessage=ev=>{
+        const v=parseFloat(JSON.parse(ev.data).p);
+        if(!opened){ opened=true; price.live=true; seed(v); setFeedBadge(); }
         price.target=v;
-      }).catch(()=>{ if(!ok) clearInterval(price.poll); }); // stay in sim, no fuss
-    tick(); price.poll=setInterval(tick,15000);
+      };
+      ws.onclose=()=>{ if(opened){ price.live=false; setFeedBadge(); } };
+      setTimeout(()=>{ if(!opened){ try{ws.close();}catch(e){} } },4000);  // stay in sim, no fuss
+    }catch(e){}
   }
 })();
 
@@ -644,23 +655,26 @@ function updateCamera(dt,fx){
   if(shotT>dur) newShot(fx);
   const mid=new THREE.Vector3(fx,3,0);
   const ease=1-Math.exp(-dt*(shotT<.7?4:1.1));
+  /* every shot stays on the south side of the field so the screen always
+     reads: marines (bulls) on the LEFT — orks (bears) on the RIGHT */
   if(shotKind===0){
     const t=clock.getElapsedTime()*.045+shotSeed;
+    const a=Math.PI/2+Math.sin(t)*1.0;
     const r=80+Math.sin(shotSeed*3.7)*30, h=18+((shotSeed*7)%1)*34;
-    camera.position.lerp(new THREE.Vector3(mid.x+Math.cos(t)*r,h,Math.sin(t)*r*.8),ease);
+    camera.position.lerp(new THREE.Vector3(mid.x+Math.cos(a)*r,h,Math.sin(a)*r),ease);
     camera.lookAt(mid);
   } else if(shotKind===1 && camFocus && camFocus.alive){
-    const p=camFocus.root.position, back=camFocus.side>0?-10:10;
-    camera.position.lerp(new THREE.Vector3(p.x+back,5.5,p.z+6),1-Math.exp(-dt*2.4));
-    camera.lookAt(p.x+camFocus.side*18,2,p.z);
+    const p=camFocus.root.position;
+    camera.position.lerp(new THREE.Vector3(p.x-camFocus.side*5,5.5,p.z+9),1-Math.exp(-dt*2.4));
+    camera.lookAt(p.x+camFocus.side*12,1.8,p.z-2);
   } else if(shotKind===2){
     const t=(shotT/13);
-    const z=-46+t*92, side=shotSeed%2<1?-1:1;
-    camera.position.lerp(new THREE.Vector3(fx+side*26,4.5,z),ease);
-    camera.lookAt(fx-side*10,2,z*.6);
+    camera.position.lerp(new THREE.Vector3(fx-30+t*60,5,30),ease);
+    camera.lookAt(fx,2,-4);
   } else {
     const t=clock.getElapsedTime()*.06+shotSeed;
-    camera.position.lerp(new THREE.Vector3(Math.cos(t)*34,10+shotT*1.6,8+Math.sin(t)*34),ease);
+    const a=Math.PI/2+Math.sin(t)*.9;
+    camera.position.lerp(new THREE.Vector3(Math.cos(a)*34,10+shotT*1.6,8+Math.sin(a)*34),ease);
     camera.lookAt(0,16+shotT*.8,8);
   }
   if(shotKind===1 && (!camFocus||!camFocus.alive)) newShot(fx);
