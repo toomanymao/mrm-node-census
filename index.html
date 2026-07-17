@@ -74,7 +74,7 @@
   <b>SPACE MARINES vs ORKS</b><br>
   a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
   by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a>
-  · 3D models generated with <a href="https://www.meshy.ai" target="_blank" rel="noopener">Meshy AI</a>
+  · 3D models by <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a>
 </div>
 
 <div class="hud panel" id="ticker">
@@ -381,8 +381,8 @@ function deployModel(gltf,arr,tint){
   const clips=gltf.animations||[];
   const get=(exact,re)=>clips.find(c=>c.name===exact)||clips.find(c=>re.test(c.name));
   const cIdle =get('Idle',/idle|stand|breath/i)||clips[0];
-  const cRun  =get('Running_A',/run|sprint|jog/i)||get('Walking_A',/walk|march/i)||cIdle;
-  const cFire =get('2H_Ranged_Shooting',/shoot|firing|fire_|aim|attack/i); // hold the line, keep firing
+  const cRun  =get('Run_Gun',/run|sprint|jog/i)||get('Walking_A',/walk|march/i)||cIdle;
+  const cFire =get('Idle_Gun',/shoot|firing|fire_|aim|attack|punch/i); // hold the line: aim / swing
   const cDeath=get('Death_A',/death|die|dead|fall/i);
   for(const u of arr){
     const inst=THREE.SkeletonUtils.clone(src);
@@ -416,9 +416,12 @@ function loadScript(src){ return new Promise((res,rej)=>{
     const loader=new THREE.GLTFLoader();
     const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
     const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
-    deployModel(gB,bulls,null);   // Space Ranger: original colours
-    deployModel(gR,bears,null);   // Orc Raider is already green — no tint needed
-                                  // (to tint a non-green stand-in: new THREE.Color(0x73f273))
+    deployModel(gB,bulls,null);                              // astronauts: original colours
+    deployModel(gR,bears,new THREE.Color(0x73f273));         // enemy is white — tint it ork-green
+    try{ // optional second marine variant for a mixed squad
+      const g2=await load('assets/bull2.glb');
+      deployModel(g2,bulls.filter((u,i)=>i%2===1),null);
+    }catch(e){}
     console.log('Lunar Front: GLB characters deployed');
   }catch(e){
     console.log('Lunar Front: built-in soldiers active — '+(e&&e.message?e.message:e));
