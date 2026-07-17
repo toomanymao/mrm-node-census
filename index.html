@@ -59,13 +59,15 @@
   #infoBtn:hover{color:#fff;border-color:#fff}
   #infoPanel{top:54px;left:50%;transform:translateX(-50%);max-width:min(480px,92vw);
              font-size:10px;letter-spacing:.1em;line-height:1.9;color:var(--amber-dim);
-             pointer-events:auto;padding:12px 16px;text-align:center}
+             pointer-events:auto;padding:14px 18px;text-align:center}
   #infoPanel[hidden]{display:none}
   #infoPanel a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(255,184,77,.4)}
   #infoPanel a:hover{color:#fff;border-color:#fff}
-  #infoClose{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--amber-dim);
-             font:inherit;font-size:12px;cursor:pointer}
-  #infoClose:hover{color:#fff}
+  #infoClose{position:absolute;top:-11px;right:-11px;width:22px;height:22px;border-radius:50%;
+             display:flex;align-items:center;justify-content:center;
+             background:var(--panel);border:1px solid rgba(255,184,77,.55);color:var(--amber);
+             font:inherit;font-size:11px;line-height:1;cursor:pointer;padding:0}
+  #infoClose:hover{color:#fff;border-color:#fff}
   #scan{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.5;
         background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px)}
   #camBtn{position:fixed;bottom:14px;right:12px;z-index:11;pointer-events:auto;
@@ -90,7 +92,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">BULLS vs BEARS</span>
-  <span class="ver" id="ver">1.14</span>
+  <span class="ver" id="ver">1.16</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -131,7 +133,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='1.14';
+const APP_VERSION='1.16';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -336,14 +338,17 @@ let flagGeo;
   cap.position.y=11.1; grp.add(cap);
   const fc=document.createElement('canvas'); fc.width=256; fc.height=160;
   const fx2=fc.getContext('2d');
+  // Bitcoin brand: #F7931A orange field, white circle, orange tilted ₿
   fx2.fillStyle='#f7931a'; fx2.fillRect(0,0,256,160);
-  fx2.fillStyle='#fff';
-  fx2.save(); fx2.translate(128,82); fx2.rotate(-0.2);
-  fx2.font='bold 118px Arial'; fx2.textAlign='center'; fx2.textBaseline='middle';
+  fx2.fillStyle='#ffffff';
+  fx2.beginPath(); fx2.arc(128,80,62,0,7); fx2.fill();
+  fx2.save(); fx2.translate(128,80); fx2.rotate(-0.245);
+  fx2.fillStyle='#f7931a';
+  fx2.font='900 96px Arial'; fx2.textAlign='center'; fx2.textBaseline='middle';
   fx2.fillText('\u20BF',0,4); fx2.restore();
   flagGeo=new THREE.PlaneGeometry(6.4,4,14,6);
   flagGeo.translate(3.2,0,0);
-  const flag=new THREE.Mesh(flagGeo,new THREE.MeshLambertMaterial({
+  const flag=new THREE.Mesh(flagGeo,new THREE.MeshBasicMaterial({
     map:new THREE.CanvasTexture(fc),side:THREE.DoubleSide}));
   flag.position.set(.15,8.7,0);
   grp.add(flag);
