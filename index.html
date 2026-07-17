@@ -90,14 +90,13 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">BULLS vs BEARS</span>
-  <span class="ver" id="ver">v12</span>
+  <span class="ver" id="ver">v13</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
 <div class="hud panel" id="infoPanel" hidden>
   <button id="infoClose">✕</button>
-  a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
-  by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a><br>
+  inspired by <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a><br>
   3D models by <a href="https://kaylousberg.itch.io" target="_blank" rel="noopener">KayKit</a> (CC0)<br>
   price data: CoinGecko · BTC/USD
 </div>
@@ -132,7 +131,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='v12';
+const APP_VERSION='v13';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -293,16 +292,22 @@ const FIELD_X = 100;
   scene.add(m1); scene.add(m2);
 })();
 
-/* a giant ringed planet dominates the sky; its halo carries the market mood */
+/* a giant Bitcoin planet dominates the sky; its halo carries the market mood */
 let planetGlow;
 (function buildPlanet(){
   const pc=document.createElement('canvas'); pc.width=pc.height=256;
   const px=pc.getContext('2d');
   const pg=px.createRadialGradient(100,90,30,128,128,128);
-  pg.addColorStop(0,'#e7d3ec'); pg.addColorStop(.6,'#b295c9'); pg.addColorStop(1,'#5e4a80');
+  pg.addColorStop(0,'#ffc46a'); pg.addColorStop(.6,'#f7931a'); pg.addColorStop(1,'#9a5407');
   px.fillStyle=pg; px.beginPath(); px.arc(128,128,124,0,7); px.fill();
-  px.globalAlpha=.25; px.fillStyle='#8a6aa8';
+  px.globalAlpha=.18; px.fillStyle='#7a4000';
   for(let i=0;i<7;i++){ px.fillRect(0,30+i*32+Math.sin(i)*6,256,rand(6,14)); }
+  px.globalAlpha=1;
+  // the ₿ mark, tilted like the Bitcoin logo
+  px.save(); px.translate(128,128); px.rotate(-0.24);
+  px.fillStyle='#fff'; px.font='bold 170px Arial';
+  px.textAlign='center'; px.textBaseline='middle';
+  px.fillText('₿',0,10); px.restore();
   const grp=new THREE.Group();
   const body=new THREE.Mesh(new THREE.CircleGeometry(52,48),
     new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(pc),fog:false}));
