@@ -92,7 +92,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">SPACE RANGERS vs ORCS</span>
-  <span class="ver" id="ver">1.17</span>
+  <span class="ver" id="ver">1.18</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -133,7 +133,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='1.17';
+const APP_VERSION='1.18';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -460,7 +460,7 @@ function setAnim(u,name){
   if(u.current) u.current.fadeOut(.18);
   u.current=next;
 }
-function deployModel(gltf,arr,tint,weapons,style){
+function deployModel(gltf,arr,tint,weapons,style,sideKey){
   const src=gltf.scene;
   if(tint){ // multiply the texture with a faction colour (e.g. orc green)
     const seen=new Set();
@@ -485,9 +485,8 @@ function deployModel(gltf,arr,tint,weapons,style){
     ? (get('1H_Melee_Attack_Chop',/melee_attack|attack|punch|bite|headbutt/i)||cIdle)
     : (get('2H_Ranged_Shooting',/shoot|firing|fire_|aim/i)||cIdle);
   const cDeath=get('Death_A',/death|die|dead|fall/i);
-  if(arr===bulls||arr===bears){
-    const key=arr===bears?'r':'b';
-    sideStyle[key]=melee?'melee':'ranged';
+  if(sideKey){
+    sideStyle[sideKey]=melee?'melee':'ranged';
     if(melee) for(const u of arr) u.depth=Math.max(2.5,u.depth-4);   // melee army presses in
   }
   let wi=0;
@@ -565,8 +564,17 @@ function loadScript(src){ return new Promise((res,rej)=>{
     await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js');
     const loader=new THREE.GLTFLoader();
     const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
-    const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
-    if(!(gB.animations&&gB.animations.length)||!(gR.animations&&gR.animations.length)){
+    // each side fields up to 5 character variants: bull.glb + bull2..bull5 / bear.glb + bear2..bear5
+    async function loadSeries(base){
+      const out=[];
+      for(let i=1;i<=5;i++){
+        try{ out.push(await load('assets/'+(i===1?base:base+i)+'.glb')); }
+        catch(e){ if(i===1) throw e; break; }
+      }
+      return out;
+    }
+    const [sB,sR]=await Promise.all([loadSeries('bull'),loadSeries('bear')]);
+    if(sB.concat(sR).some(g=>!(g.animations&&g.animations.length))){
       try{ donorAnims=(await load('assets/anims.glb')).animations; }
       catch(e){ console.log('animation library missing (assets/anims.glb)'); }
     }
@@ -575,8 +583,10 @@ function loadScript(src){ return new Promise((res,rej)=>{
       loadOpt('assets/weapon_bull.glb'),
       loadOpt('assets/weapon_bear.glb'),
       loadOpt('assets/weapon_bear2.glb')]);
-    deployModel(gB,bulls,null,wB?[wB]:null,'ranged');             // rangers: rifles
-    deployModel(gR,bears,null,[wRa,wRb].filter(Boolean),'melee'); // orcs: axes & clubs
+    sB.forEach((g,v)=>deployModel(g,bulls.filter((u,i)=>i%sB.length===v),
+      null,wB?[wB]:null,'ranged','b'));                            // ranged coalition: rifles
+    sR.forEach((g,v)=>deployModel(g,bears.filter((u,i)=>i%sR.length===v),
+      null,[wRa,wRb].filter(Boolean),'melee','r'));                // melee horde: axes & clubs
     for(const [file,key] of [['assets/mech_bull.glb','b'],['assets/mech_bear.glb','r']]){
       try{
         const g=await load(file);
@@ -598,12 +608,8 @@ function loadScript(src){ return new Promise((res,rej)=>{
         }
       }catch(e){} // no file: box machine stays
     }
-    portraitFromGltf(gB,$('pL'),.45,wB);
-    portraitFromGltf(gR,$('pR'),-.45,wRa);
-    try{ // optional second marine variant for a mixed squad
-      const g2=await load('assets/bull2.glb');
-      deployModel(g2,bulls.filter((u,i)=>i%2===1),null);
-    }catch(e){}
+    portraitFromGltf(sB[0],$('pL'),.45,wB);
+    portraitFromGltf(sR[0],$('pR'),-.45,wRa);
     console.log('Desert Front: GLB characters deployed');
   }catch(e){
     console.log('Desert Front: built-in soldiers active — '+(e&&e.message?e.message:e));
