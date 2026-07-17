@@ -29,20 +29,18 @@
             padding:2px 6px;border:1px solid currentColor;border-radius:2px;color:var(--amber)}
   #feedmode.live{color:var(--up)}
 
-  #war{bottom:14px;left:50%;transform:translateX(-50%);width:min(430px,72vw)}
+  #war{bottom:14px;left:50%;transform:translateX(-50%);width:min(520px,86vw);
+       display:flex;align-items:center;gap:10px}
+  #warmid{flex:1;min-width:0}
   #war .row{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.14em;margin-bottom:5px}
   #war .b{color:var(--bull)} #war .r{color:var(--bear)}
+  .portrait{width:46px;height:60px;object-fit:contain;flex:0 0 auto;display:none;
+            background:rgba(255,255,255,.05);border:1px solid rgba(255,184,77,.3);border-radius:2px}
   #bar{position:relative;height:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,184,77,.25)}
   #barfill{position:absolute;top:0;bottom:0;left:50%;width:0;background:var(--bull)}
   #barpin{position:absolute;top:-3px;width:2px;height:14px;background:#fff;left:50%}
   #war .cap{margin-top:5px;text-align:center;font-size:9px;letter-spacing:.24em;color:var(--amber-dim)}
 
-  #feed{top:10px;right:10px;width:min(300px,52vw);display:flex;flex-direction:column;gap:4px;align-items:flex-end}
-  #feed .k{background:var(--panel);border:1px solid rgba(255,184,77,.18);padding:4px 8px;font-size:11px;
-           border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
-           animation:kin .25s ease-out;transition:opacity .6s}
-  @keyframes kin{from{transform:translateX(14px);opacity:0}to{transform:none;opacity:1}}
-  .fb{color:var(--bull)} .fr{color:var(--bear)} .fv{color:var(--amber-dim)}
 
   /* compact top bar: title · version · info toggle */
   #topbar{top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
@@ -76,10 +74,10 @@
     #topbar .ttl{font-size:8px}
     #infoPanel{top:40px}
     #ticker{top:44px} #ticker .px{font-size:20px}
-    #feed{top:44px;width:56vw}
+    
     #camBtn{bottom:88px;right:8px}
   }
-  @media (prefers-reduced-motion:reduce){ #feed .k{animation:none} }
+  
 </style>
 </head>
 <body>
@@ -87,7 +85,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">SPACE MARINES vs ORKS</span>
-  <span class="ver" id="ver">v9</span>
+  <span class="ver" id="ver">v10</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -106,15 +104,17 @@
 </div>
 
 <div class="hud panel" id="war">
-  <div class="row">
-    <span class="b">■ 1ST BULL BATTALION <span id="kb">0</span></span>
-    <span class="r"><span id="kr">0</span> BEAR COMPANY ■</span>
+  <img id="pL" class="portrait" alt="">
+  <div id="warmid">
+    <div class="row">
+      <span class="b">■ 1ST BULL BATTALION <span id="kb">0</span></span>
+      <span class="r"><span id="kr">0</span> BEAR COMPANY ■</span>
+    </div>
+    <div id="bar"><div id="barfill"></div><div id="barpin"></div></div>
+    <div class="cap">FRONTLINE · PRICE vs SESSION ANCHOR</div>
   </div>
-  <div id="bar"><div id="barfill"></div><div id="barpin"></div></div>
-  <div class="cap">FRONTLINE · PRICE vs SESSION ANCHOR</div>
+  <img id="pR" class="portrait" alt="">
 </div>
-
-<div class="hud" id="feed"></div>
 <button id="camBtn">CAM · AUTO</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -128,7 +128,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='v9';
+const APP_VERSION='v10';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -460,6 +460,36 @@ function deployModel(gltf,arr,tint){
     }
   }
 }
+/* portraits: render each side's character once into the gauge thumbnails */
+function makePortrait(build,imgEl,faceY){
+  try{
+    const r=new THREE.WebGLRenderer({antialias:true,alpha:true});
+    r.setPixelRatio(2); r.setSize(92,120);
+    const sc=new THREE.Scene();
+    sc.add(new THREE.AmbientLight(0xffffff,.95));
+    const dl=new THREE.DirectionalLight(0xfff1d6,.9); dl.position.set(2,4,3); sc.add(dl);
+    const inst=build(); inst.rotation.y=faceY; sc.add(inst);
+    const bb=new THREE.Box3().setFromObject(inst);
+    const size=bb.getSize(new THREE.Vector3()), c=bb.getCenter(new THREE.Vector3());
+    const cam=new THREE.PerspectiveCamera(32,92/120,.01,100);
+    const dist=Math.max(size.y,size.x*1.4)*2.0;
+    cam.position.set(c.x,c.y+size.y*.12,c.z+dist);
+    cam.lookAt(c);
+    r.render(sc,cam);
+    imgEl.src=r.domElement.toDataURL('image/png');
+    imgEl.style.display='block';
+    r.dispose(); if(r.forceContextLoss) r.forceContextLoss();
+  }catch(e){ console.log('portrait failed:',e); }
+}
+function portraitFromGltf(gltf,imgEl,faceY){
+  makePortrait(()=>{
+    const inst=THREE.SkeletonUtils.clone(gltf.scene);
+    const clips=gltf.animations||[];
+    const idle=clips.find(c=>c.name==='Idle')||clips[0];
+    if(idle){ const mx=new THREE.AnimationMixer(inst); mx.clipAction(idle).play(); mx.update(.5); }
+    return inst;
+  },imgEl,faceY);
+}
 function loadScript(src){ return new Promise((res,rej)=>{
   const s=document.createElement('script'); s.src=src;
   s.onload=res; s.onerror=()=>rej(new Error('script blocked: '+src));
@@ -474,6 +504,8 @@ function loadScript(src){ return new Promise((res,rej)=>{
     deployModel(gB,bulls,null);            // knight: original colours
     deployModel(gR,bears,null);            // orc skin is baked green in the texture
                                            // (runtime tint if ever needed: new THREE.Color(0x73f273))
+    portraitFromGltf(gB,$('pL'),.45);
+    portraitFromGltf(gR,$('pR'),-.45);
     try{ // optional second marine variant for a mixed squad
       const g2=await load('assets/bull2.glb');
       deployModel(g2,bulls.filter((u,i)=>i%2===1),null);
@@ -481,6 +513,8 @@ function loadScript(src){ return new Promise((res,rej)=>{
     console.log('Desert Front: GLB characters deployed');
   }catch(e){
     console.log('Desert Front: built-in soldiers active — '+(e&&e.message?e.message:e));
+    makePortrait(()=>new THREE.Mesh(bullGeo,unitMat),$('pL'),-Math.PI/2+.4);
+    makePortrait(()=>new THREE.Mesh(bearGeo,unitMat),$('pR'),-Math.PI/2-.4);
   }
 })();
 
@@ -587,16 +621,7 @@ function setFeedBadge(){
 
 /* ---------------- combat ---------------- */
 let killsB=0,killsR=0,killTimer=0;
-const feedEl=$('feed');
-function addFeed(killer,victim,side){
-  const div=document.createElement('div'); div.className='k';
-  const kc=side>0?'fb':'fr', vc=side>0?'fr':'fb';
-  div.innerHTML=`<span class="${kc}">${killer}</span> <span class="fv">${pick(VERBS)}</span> `+
-                `<span class="${vc}">${victim}</span> <span class="fv">${pick(MEANS)}</span>`;
-  feedEl.prepend(div);
-  while(feedEl.children.length>7) feedEl.lastChild.remove();
-  setTimeout(()=>{div.style.opacity=.25;},6000);
-}
+function addFeed(){ /* killfeed panel removed — kills tracked in the gauge counters */ }
 function tryKill(mom){
   const bias=.5+mom*.42;
   const bullScores=Math.random()<bias;
