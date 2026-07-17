@@ -74,7 +74,7 @@
   <b>SPACE MARINES vs ORKS</b><br>
   a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
   by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a>
-  · 3D models by <a href="https://quaternius.com" target="_blank" rel="noopener">Quaternius</a>
+  · 3D models by <a href="https://kaylousberg.itch.io" target="_blank" rel="noopener">KayKit</a>
 </div>
 
 <div class="hud panel" id="ticker">
@@ -416,8 +416,9 @@ function loadScript(src){ return new Promise((res,rej)=>{
     const loader=new THREE.GLTFLoader();
     const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
     const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
-    deployModel(gB,bulls,null);                              // astronauts: original colours
-    deployModel(gR,bears,new THREE.Color(0x73f273));         // enemy is white — tint it ork-green
+    deployModel(gB,bulls,null);            // knight: original colours
+    deployModel(gR,bears,null);            // orc skin is baked green in the texture
+                                           // (runtime tint if ever needed: new THREE.Color(0x73f273))
     try{ // optional second marine variant for a mixed squad
       const g2=await load('assets/bull2.glb');
       deployModel(g2,bulls.filter((u,i)=>i%2===1),null);
