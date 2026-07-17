@@ -84,8 +84,8 @@
 <div id="scan"></div>
 
 <div class="hud panel" id="topbar">
-  <span class="ttl">SPACE MARINES vs ORKS</span>
-  <span class="ver" id="ver">v10</span>
+  <span class="ttl">BULLS vs BEARS</span>
+  <span class="ver" id="ver">v11</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -128,7 +128,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='v10';
+const APP_VERSION='v11';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -391,7 +391,7 @@ function makeSide(side){ // +1 bulls (west, face +x) | -1 bears (east, face -x)
     const u={root,visual:box,mixer:null,actions:null,current:null,
       side,rank,alive:true,deadAt:0,respawnAt:0,
       z:(row-(ROWS-1)/2)*6+rand(-1.8,1.8),
-      depth:6+rank*5.5+rand(-1.5,1.5),
+      depth:2.5+rank*5.5+rand(-1,1),
       seed:rand(0,100),
       crouchT:rand(0,10),
       speed:rand(.85,1.2)*6.5,
@@ -518,17 +518,19 @@ function loadScript(src){ return new Promise((res,rej)=>{
   }
 })();
 
-/* ---------------- tracers, impacts, smoke ---------------- */
-const laserGeo=new THREE.BoxGeometry(.1,.1,1); laserGeo.translate(0,0,.5);
-const tracerMat=new THREE.MeshBasicMaterial({color:0xffe9b0,blending:THREE.AdditiveBlending,transparent:true});
-const lasers=[];
-function fireTracer(from,to){
-  const m=new THREE.Mesh(laserGeo,tracerMat.clone());
-  m.position.copy(from); m.lookAt(to);
-  m.scale.z=from.distanceTo(to);
-  scene.add(m); lasers.push({m,life:.1});
-}
+/* ---------------- melee clashes, impacts, smoke ---------------- */
 const bursts=[];
+function clash(p){ // steel-on-steel sparks at the point of contact
+  const N=16, g=new THREE.BufferGeometry();
+  const pos=new Float32Array(N*3), vel=[];
+  for(let i=0;i<N;i++){ pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;
+    vel.push(new THREE.Vector3(gauss(),Math.abs(gauss())*.8,gauss()).multiplyScalar(rand(5,13))); }
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const mat=new THREE.PointsMaterial({color:0xfff3c4,size:.32,transparent:true,
+    blending:THREE.AdditiveBlending,depthWrite:false});
+  const pts=new THREE.Points(g,mat); scene.add(pts);
+  bursts.push({pts,vel,life:.3,max:.3});
+}
 function impact(p){ // regolith kicked up — grey dust, no fireball (vacuum)
   const N=30, g=new THREE.BufferGeometry();
   const pos=new Float32Array(N*3), vel=[];
@@ -630,10 +632,8 @@ function tryKill(mom){
   if(!shooters.length||!targets.length) return;
   targets.sort((a,b)=>a.depth-b.depth);
   const victim=targets[(Math.random()*Math.min(6,targets.length))|0];
-  const shooter=pick(shooters);
-  const from=shooter.root.position.clone(); from.y+=1.5;
   const to=victim.root.position.clone(); to.y+=1.5;
-  fireTracer(from,to);
+  clash(to);
   setTimeout(()=>{
     if(!victim.alive) return;
     victim.alive=false; victim.deadAt=clock.getElapsedTime();
@@ -644,27 +644,19 @@ function tryKill(mom){
       victim.actions.death.reset().fadeIn(.1).play();
     }
     impact(to);
-    if(shooter.side>0) killsB++; else killsR++;
+    if(bullScores) killsB++; else killsR++;
     $('kb').textContent=killsB; $('kr').textContent=killsR;
-    addFeed(shooter.name,victim.name,shooter.side);
     if(camFocus===victim) camFocus=null;
   },120);
 }
 let tracerT=0;
-function ambientFire(dt){
+function ambientClashes(dt,fx,mom){
   tracerT-=dt;
   if(tracerT>0) return;
-  tracerT=rand(.09,.24);
-  const side=Math.random()<.5?1:-1;
-  const arr=(side>0?bulls:bears).filter(u=>u.alive);
-  const foe=(side>0?bears:bulls).filter(u=>u.alive);
-  if(!arr.length||!foe.length) return;
-  const s=pick(arr), t=pick(foe);
-  const from=s.root.position.clone(); from.y+=1.5;
-  const to=t.root.position.clone(); to.y+=rand(.8,2.2);
-  to.x+=rand(-3,3); to.z+=rand(-3,3);
-  fireTracer(from,to);
-  if(Math.random()<.25) impact(new THREE.Vector3(to.x,1,to.z)); // near-miss dust
+  tracerT=rand(.15,.4)/(1+Math.abs(mom));
+  // sparks fly where the two lines grind together
+  clash(new THREE.Vector3(fx+rand(-4,4), rand(1,2.2), rand(-22,22)));
+  if(Math.random()<.3) impact(new THREE.Vector3(fx+rand(-6,6),1,rand(-24,24)));
 }
 
 /* ---------------- broadcast camera + manual override ----------------
@@ -790,7 +782,7 @@ function animate(){
 
   killTimer-=dt;
   if(killTimer<=0){ tryKill(mom); killTimer=rand(.35,1.1)/(1+Math.abs(mom)*2.2); }
-  ambientFire(dt);
+  ambientClashes(dt,fx,mom);
 
   for(const u of units){
     const m=u.root;
@@ -836,9 +828,6 @@ function animate(){
     }
   }
 
-  for(let i=lasers.length-1;i>=0;i--){ const L=lasers[i]; L.life-=dt;
-    L.m.material.opacity=Math.max(0,L.life/.1);
-    if(L.life<=0){ scene.remove(L.m); L.m.material.dispose(); lasers.splice(i,1);} }
   for(let i=bursts.length-1;i>=0;i--){ const B=bursts[i]; B.life-=dt;
     const pos=B.pts.geometry.attributes.position;
     for(let j=0;j<B.vel.length;j++){
