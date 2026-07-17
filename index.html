@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Lunar Front — BTC/USD</title>
+<title>Desert Front — BTC/USD</title>
 <style>
   :root{
     --amber:#ffb84d; --amber-dim:#8f6a2e;
@@ -44,12 +44,25 @@
   @keyframes kin{from{transform:translateX(14px);opacity:0}to{transform:none;opacity:1}}
   .fb{color:var(--bull)} .fr{color:var(--bear)} .fv{color:var(--amber-dim)}
 
-  #credits{top:10px;left:50%;transform:translateX(-50%);max-width:min(560px,46vw);
-           text-align:center;font-size:9px;letter-spacing:.12em;line-height:1.7;
-           color:var(--amber-dim);pointer-events:auto;padding:7px 12px}
-  #credits b{color:var(--amber);font-weight:700;letter-spacing:.18em}
-  #credits a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(255,184,77,.4)}
-  #credits a:hover{color:#fff;border-color:#fff}
+  /* compact top bar: title · version · info toggle */
+  #topbar{top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+          pointer-events:auto;padding:7px 12px}
+  #topbar .ttl{font-size:10px;letter-spacing:.22em;color:var(--amber);font-weight:700;white-space:nowrap}
+  #topbar .ver{font-size:9px;letter-spacing:.14em;color:#fff;background:rgba(255,184,77,.18);
+               border:1px solid rgba(255,184,77,.5);padding:2px 7px;border-radius:2px}
+  #infoBtn{width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,184,77,.55);
+           background:transparent;color:var(--amber);font:inherit;font-size:11px;font-style:italic;
+           font-weight:700;cursor:pointer;line-height:1;flex:0 0 auto}
+  #infoBtn:hover{color:#fff;border-color:#fff}
+  #infoPanel{top:54px;left:50%;transform:translateX(-50%);max-width:min(480px,92vw);
+             font-size:10px;letter-spacing:.1em;line-height:1.9;color:var(--amber-dim);
+             pointer-events:auto;padding:12px 16px;text-align:center}
+  #infoPanel[hidden]{display:none}
+  #infoPanel a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(255,184,77,.4)}
+  #infoPanel a:hover{color:#fff;border-color:#fff}
+  #infoClose{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--amber-dim);
+             font:inherit;font-size:12px;cursor:pointer}
+  #infoClose:hover{color:#fff}
   #scan{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.5;
         background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px)}
   #camBtn{position:fixed;bottom:14px;right:12px;z-index:11;pointer-events:auto;
@@ -58,10 +71,12 @@
   #camBtn.free{color:#fff;border-color:var(--amber)}
   #camBtn:active{transform:translateY(1px)}
   @media (max-width:900px){
-    #credits{top:0;left:0;right:0;transform:none;max-width:none;width:100%;
-             font-size:8px;padding:5px 8px;border-left:0;border-right:0;border-top:0}
-    #ticker{top:64px} #ticker .px{font-size:20px}
-    #feed{top:64px;width:56vw}
+    #topbar{top:0;left:0;right:0;transform:none;width:100%;justify-content:center;
+            border-left:0;border-right:0;border-top:0;padding:5px 8px}
+    #topbar .ttl{font-size:8px}
+    #infoPanel{top:40px}
+    #ticker{top:44px} #ticker .px{font-size:20px}
+    #feed{top:44px;width:56vw}
     #camBtn{bottom:88px;right:8px}
   }
   @media (prefers-reduced-motion:reduce){ #feed .k{animation:none} }
@@ -70,15 +85,22 @@
 <body>
 <div id="scan"></div>
 
-<div class="hud panel" id="credits">
-  <b>SPACE MARINES vs ORKS</b><br>
+<div class="hud panel" id="topbar">
+  <span class="ttl">SPACE MARINES vs ORKS</span>
+  <span class="ver" id="ver">v9</span>
+  <button id="infoBtn" title="Credits & info">i</button>
+</div>
+
+<div class="hud panel" id="infoPanel" hidden>
+  <button id="infoClose">✕</button>
   a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
-  by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a>
-  · 3D models by <a href="https://kaylousberg.itch.io" target="_blank" rel="noopener">KayKit</a>
+  by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a><br>
+  3D models by <a href="https://kaylousberg.itch.io" target="_blank" rel="noopener">KayKit</a> (CC0)<br>
+  price data: CoinGecko · BTC/USD
 </div>
 
 <div class="hud panel" id="ticker">
-  <div class="sym">BTC/USD · LUNAR FRONT<span id="feedmode">SIM</span></div>
+  <div class="sym">BTC/USD · DESERT FRONT<span id="feedmode">SIM</span></div>
   <div class="px" id="px">—</div>
   <div class="dl" id="dl">anchor ±0.000%</div>
 </div>
@@ -106,6 +128,11 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
+const APP_VERSION='v9';
+$('ver').textContent=APP_VERSION;
+console.log('Desert Front '+APP_VERSION);
+$('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
+$('infoClose').onclick=()=>{ $('infoPanel').hidden=true; };
 const rand = (a,b)=>a+Math.random()*(b-a);
 const pick = a => a[(Math.random()*a.length)|0];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -121,16 +148,16 @@ renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x04060c);
-scene.fog = new THREE.FogExp2(0x0a0d16, 0.0028);
+scene.background = new THREE.Color(0x2b1c33);
+scene.fog = new THREE.FogExp2(0xc9955e, 0.0022);
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 2000);
 camera.position.set(0,40,120);
 
-scene.add(new THREE.AmbientLight(0x4c5468, 1.15));
-scene.add(new THREE.HemisphereLight(0x4a5264, 0x1a150e, .8));
-const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.55);
-sunLight.position.set(-140,150,-120); scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x9a8068, .9));
+scene.add(new THREE.HemisphereLight(0xffbf80, 0x6b4a2e, .6));
+const sunLight = new THREE.DirectionalLight(0xffdfae, 1.6);
+sunLight.position.set(-160,70,50); scene.add(sunLight);
 
 /* ---------------- terrain ---------------- */
 const FIELD_X = 100;
@@ -138,28 +165,29 @@ const FIELD_X = 100;
   const g = new THREE.PlaneGeometry(460, 300, 96, 62);
   g.rotateX(-Math.PI/2);
   const pos = g.attributes.position;
-  const craters=[]; for(let i=0;i<28;i++)
-    craters.push({x:rand(-200,200), z:rand(-130,130), r:rand(8,24), d:rand(1.5,4.5)});
+  const craters=[]; for(let i=0;i<10;i++)
+    craters.push({x:rand(-200,200), z:rand(-130,130), r:rand(8,18), d:rand(1,2.5)});
   const cols=[];
   for(let i=0;i<pos.count;i++){
     const x=pos.getX(i), z=pos.getZ(i);
-    let y = Math.sin(x*.05)*Math.cos(z*.07)*1.6 + Math.sin(x*.13+z*.11)*.8;
+    // rolling dunes
+    let y = Math.sin(x*.03+z*.012)*2.6 + Math.sin(x*.09-z*.05)*1.1 + Math.sin(z*.07)*1.4;
     for(const c of craters){
       const d=Math.hypot(x-c.x,z-c.z);
-      if(d<c.r){ const t=d/c.r; y += -c.d*Math.cos(t*Math.PI/2) + c.d*.35*Math.exp(-((t-1)*(t-1))*24); }
+      if(d<c.r){ const t=d/c.r; y += -c.d*Math.cos(t*Math.PI/2) + c.d*.3*Math.exp(-((t-1)*(t-1))*24); }
     }
     const lane = clamp(1-Math.abs(z)/70,0,1)*clamp(1-Math.abs(x)/130,0,1);
     y *= (1-lane*.75);
     pos.setY(i,y);
-    const sh = .55 + y*.055 + rand(-.03,.03);   // grey regolith
-    cols.push(.44*sh, .44*sh, .47*sh);
+    const sh = .8 + y*.045 + rand(-.04,.04);   // warm sand
+    cols.push(.80*sh, .62*sh, .40*sh);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
   g.computeVertexNormals();
   scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({vertexColors:true})));
 
-  const rockMat=new THREE.MeshLambertMaterial({color:0x54575f});
-  for(let i=0;i<46;i++){
+  const rockMat=new THREE.MeshLambertMaterial({color:0x8a5a3c});
+  for(let i=0;i<40;i++){
     const x=rand(-210,210), z=rand(-140,140);
     if(Math.abs(x)<115 && Math.abs(z)<62) continue;
     const r=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.8,3.6),0),rockMat);
@@ -167,12 +195,20 @@ const FIELD_X = 100;
     r.rotation.set(rand(0,3),rand(0,3),rand(0,3));
     scene.add(r);
   }
+  // distant red-rock mesas on the horizon
+  const mesaMat=new THREE.MeshLambertMaterial({color:0x7a4632});
+  const mesas=[[-260,-190,70,34],[240,-210,90,46],[320,60,60,30],[-300,110,80,26],[60,-250,110,40]];
+  for(const [mx,mz,mw,mh] of mesas){
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(mw*.7,mw,mh,9),mesaMat);
+    m.position.set(mx,mh/2-4,mz); m.rotation.y=rand(0,3);
+    scene.add(m);
+  }
 })();
 
 /* wrecked hardware & cover on the field */
 (function buildProps(){
-  const hull=new THREE.MeshLambertMaterial({color:0x585c63});
-  const dark=new THREE.MeshLambertMaterial({color:0x33363c});
+  const hull=new THREE.MeshLambertMaterial({color:0x9a7a58});
+  const dark=new THREE.MeshLambertMaterial({color:0x6b4e36});
   // downed dropship near the middle — the thing both sides are fighting over
   const ship=new THREE.Group();
   const body=new THREE.Mesh(new THREE.CylinderGeometry(3.2,3.8,26,10),hull);
@@ -184,21 +220,21 @@ const FIELD_X = 100;
   scene.add(ship);
   // habitat modules to the north
   for(let i=0;i<3;i++){
-    const h=new THREE.Mesh(new THREE.CylinderGeometry(4,4,14,12),new THREE.MeshLambertMaterial({color:0x6a6e76}));
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(4,4,14,12),new THREE.MeshLambertMaterial({color:0xb99a6e}));
     h.rotation.z=Math.PI/2; h.position.set(-30+i*26, 3.6, 52+rand(-3,3)); h.rotation.y=rand(-.2,.2);
     scene.add(h);
     const win=new THREE.Mesh(new THREE.BoxGeometry(10,.9,.3),new THREE.MeshBasicMaterial({color:0xcfe7ff}));
     win.position.copy(h.position); win.position.z-=4.05; win.position.y+=1.4; scene.add(win);
   }
   // scattered supply crates & barriers
-  const crate=new THREE.MeshLambertMaterial({color:0x4c5158});
+  const crate=new THREE.MeshLambertMaterial({color:0x8f6f4c});
   for(let i=0;i<14;i++){
     const c=new THREE.Mesh(new THREE.BoxGeometry(rand(1.6,3),rand(1.2,2),rand(1.6,3)),crate);
     c.position.set(rand(-85,85),.8,rand(-46,46)); c.rotation.y=rand(0,3.14);
     scene.add(c);
   }
   // defensive berms at each side's line of departure
-  const bermB=new THREE.MeshLambertMaterial({color:0x40444c});
+  const bermB=new THREE.MeshLambertMaterial({color:0xb08a5c});
   for(let i=0;i<6;i++){
     for(const s of [-1,1]){
       const b=new THREE.Mesh(new THREE.BoxGeometry(2,1.8,7),bermB);
@@ -209,29 +245,48 @@ const FIELD_X = 100;
   }
 })();
 
-/* ---------------- sky: stars, Earth, the ₿ marker ---------------- */
+/* ---------------- sky: dusk gradient, low sun, faint stars, twin moons -- */
 (function buildSky(){
+  // gradient dome: orange horizon fading to violet-night zenith
+  const c=document.createElement('canvas'); c.width=4; c.height=256;
+  const x=c.getContext('2d');
+  const grd=x.createLinearGradient(0,256,0,0);
+  grd.addColorStop(0,'#e0904a'); grd.addColorStop(.25,'#c96f45');
+  grd.addColorStop(.55,'#5c3556'); grd.addColorStop(1,'#221a38');
+  x.fillStyle=grd; x.fillRect(0,0,4,256);
+  const domeTex=new THREE.CanvasTexture(c);
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(820,24,18),
+    new THREE.MeshBasicMaterial({map:domeTex,side:THREE.BackSide,fog:false}));
+  scene.add(dome);
+
+  // faint high stars
   const sg=new THREE.BufferGeometry(); const sp=[];
-  for(let i=0;i<1700;i++){
-    const t=Math.acos(rand(-1,.35)), p=rand(0,Math.PI*2), r=780;
-    sp.push(r*Math.sin(t)*Math.cos(p), Math.abs(r*Math.cos(t))-40, r*Math.sin(t)*Math.sin(p));
+  for(let i=0;i<500;i++){
+    const t=Math.acos(rand(-1,-.25)), p=rand(0,Math.PI*2), r=760;
+    sp.push(r*Math.sin(t)*Math.cos(p), Math.abs(r*Math.cos(t))+120, r*Math.sin(t)*Math.sin(p));
   }
   sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
-  scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xd8ddff,size:1.5,sizeAttenuation:false})));
+  scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffe9d0,size:1.4,
+    sizeAttenuation:false,transparent:true,opacity:.5,fog:false})));
 
-  // Earth on the horizon
-  const ec=document.createElement('canvas'); ec.width=ec.height=256;
-  const ex=ec.getContext('2d');
-  const eg=ex.createRadialGradient(110,100,20,128,128,128);
-  eg.addColorStop(0,'#9fd0ff'); eg.addColorStop(.55,'#2f6fca'); eg.addColorStop(1,'#0c2a5e');
-  ex.fillStyle=eg; ex.beginPath(); ex.arc(128,128,124,0,7); ex.fill();
-  ex.fillStyle='rgba(255,255,255,.5)';
-  for(let i=0;i<9;i++){ ex.beginPath();
-    ex.ellipse(rand(40,216),rand(40,216),rand(14,42),rand(6,14),rand(0,3),0,7); ex.fill(); }
-  const eTex=new THREE.CanvasTexture(ec);
-  const earth=new THREE.Mesh(new THREE.CircleGeometry(30,48),new THREE.MeshBasicMaterial({map:eTex}));
-  earth.position.set(-180,70,-320); scene.add(earth);
-  earth.onBeforeRender=()=>earth.lookAt(camera.position);
+  // the low sun
+  const sc=document.createElement('canvas'); sc.width=sc.height=128;
+  const sx=sc.getContext('2d'); const sgr=sx.createRadialGradient(64,64,10,64,64,64);
+  sgr.addColorStop(0,'rgba(255,240,200,1)'); sgr.addColorStop(.3,'rgba(255,190,110,.85)');
+  sgr.addColorStop(1,'rgba(255,150,60,0)');
+  sx.fillStyle=sgr; sx.fillRect(0,0,128,128);
+  const sun=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(sc),
+    blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,fog:false}));
+  sun.position.set(-560,95,180); sun.scale.set(260,260,1); scene.add(sun);
+
+  // twin moons hanging in the dusk
+  const moonMat=new THREE.MeshBasicMaterial({color:0xe8d9c8,fog:false});
+  const m1=new THREE.Mesh(new THREE.CircleGeometry(16,32),moonMat); m1.position.set(240,180,-560);
+  const m2=new THREE.Mesh(new THREE.CircleGeometry(8,32),moonMat.clone()); m2.material.color.set(0xcbb8a8);
+  m2.position.set(330,140,-540);
+  m1.onBeforeRender=()=>m1.lookAt(camera.position);
+  m2.onBeforeRender=()=>m2.lookAt(camera.position);
+  scene.add(m1); scene.add(m2);
 })();
 
 /* the objective: a comms mast broadcasting the price — its beacon is the ₿ */
@@ -423,9 +478,9 @@ function loadScript(src){ return new Promise((res,rej)=>{
       const g2=await load('assets/bull2.glb');
       deployModel(g2,bulls.filter((u,i)=>i%2===1),null);
     }catch(e){}
-    console.log('Lunar Front: GLB characters deployed');
+    console.log('Desert Front: GLB characters deployed');
   }catch(e){
-    console.log('Lunar Front: built-in soldiers active — '+(e&&e.message?e.message:e));
+    console.log('Desert Front: built-in soldiers active — '+(e&&e.message?e.message:e));
   }
 })();
 
@@ -446,7 +501,7 @@ function impact(p){ // regolith kicked up — grey dust, no fireball (vacuum)
   for(let i=0;i<N;i++){ pos[i*3]=p.x;pos[i*3+1]=Math.max(.2,p.y-1);pos[i*3+2]=p.z;
     vel.push(new THREE.Vector3(gauss()*.7,Math.abs(gauss())*1.6,gauss()*.7).multiplyScalar(rand(3,9))); }
   g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  const mat=new THREE.PointsMaterial({color:0x9a9da5,size:.5,transparent:true,depthWrite:false});
+  const mat=new THREE.PointsMaterial({color:0xd6b285,size:.5,transparent:true,depthWrite:false});
   const pts=new THREE.Points(g,mat); scene.add(pts);
   bursts.push({pts,vel,life:.9,max:.9});
 }
