@@ -74,7 +74,7 @@
   <b>SPACE MARINES vs ORKS</b><br>
   a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
   by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a>
-  · character models: <a href="https://kaylousberg.itch.io/kaykit-series-4" target="_blank" rel="noopener">KayKit Mystery Series 4</a>
+  · 3D models generated with <a href="https://www.meshy.ai" target="_blank" rel="noopener">Meshy AI</a>
 </div>
 
 <div class="hud panel" id="ticker">
@@ -380,10 +380,10 @@ function deployModel(gltf,arr,tint){
   const s=2.9/h;                                  // normalise to soldier height
   const clips=gltf.animations||[];
   const get=(exact,re)=>clips.find(c=>c.name===exact)||clips.find(c=>re.test(c.name));
-  const cIdle =get('Idle',/idle/i)||clips[0];
-  const cRun  =get('Running_A',/run/i)||get('Walking_A',/walk/i)||cIdle;
-  const cFire =get('2H_Ranged_Shooting',/ranged_shoot/i);      // hold the line, keep firing
-  const cDeath=get('Death_A',/death|die/i);
+  const cIdle =get('Idle',/idle|stand|breath/i)||clips[0];
+  const cRun  =get('Running_A',/run|sprint|jog/i)||get('Walking_A',/walk|march/i)||cIdle;
+  const cFire =get('2H_Ranged_Shooting',/shoot|firing|fire_|aim|attack/i); // hold the line, keep firing
+  const cDeath=get('Death_A',/death|die|dead|fall/i);
   for(const u of arr){
     const inst=THREE.SkeletonUtils.clone(src);
     inst.scale.setScalar(s);
