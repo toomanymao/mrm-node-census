@@ -90,7 +90,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">BULLS vs BEARS</span>
-  <span class="ver" id="ver">v13</span>
+  <span class="ver" id="ver">1.14</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -131,7 +131,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='v13';
+const APP_VERSION='1.14';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -303,11 +303,6 @@ let planetGlow;
   px.globalAlpha=.18; px.fillStyle='#7a4000';
   for(let i=0;i<7;i++){ px.fillRect(0,30+i*32+Math.sin(i)*6,256,rand(6,14)); }
   px.globalAlpha=1;
-  // the ₿ mark, tilted like the Bitcoin logo
-  px.save(); px.translate(128,128); px.rotate(-0.24);
-  px.fillStyle='#fff'; px.font='bold 170px Arial';
-  px.textAlign='center'; px.textBaseline='middle';
-  px.fillText('₿',0,10); px.restore();
   const grp=new THREE.Group();
   const body=new THREE.Mesh(new THREE.CircleGeometry(52,48),
     new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(pc),fog:false}));
@@ -326,6 +321,34 @@ let planetGlow;
   grp.position.set(-140,240,-640);
   const face=()=>grp.lookAt(camera.position);
   body.onBeforeRender=face;
+  scene.add(grp);
+})();
+
+/* the Bitcoin standard, planted on contested ground */
+let flagGeo;
+(function buildFlag(){
+  const grp=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.12,.16,11,8),
+    new THREE.MeshLambertMaterial({color:0x6b5a48}));
+  pole.position.y=5.5; grp.add(pole);
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(.28,8,8),
+    new THREE.MeshLambertMaterial({color:0xd8a531}));
+  cap.position.y=11.1; grp.add(cap);
+  const fc=document.createElement('canvas'); fc.width=256; fc.height=160;
+  const fx2=fc.getContext('2d');
+  fx2.fillStyle='#f7931a'; fx2.fillRect(0,0,256,160);
+  fx2.fillStyle='#fff';
+  fx2.save(); fx2.translate(128,82); fx2.rotate(-0.2);
+  fx2.font='bold 118px Arial'; fx2.textAlign='center'; fx2.textBaseline='middle';
+  fx2.fillText('\u20BF',0,4); fx2.restore();
+  flagGeo=new THREE.PlaneGeometry(6.4,4,14,6);
+  flagGeo.translate(3.2,0,0);
+  const flag=new THREE.Mesh(flagGeo,new THREE.MeshLambertMaterial({
+    map:new THREE.CanvasTexture(fc),side:THREE.DoubleSide}));
+  flag.position.set(.15,8.7,0);
+  grp.add(flag);
+  grp.position.set(5,0,-21);   // off the main lane, in everyone's sightline
+  grp.rotation.y=-.35;
   scene.add(grp);
 })();
 
@@ -416,7 +439,8 @@ const bulls=units.filter(u=>u.side>0), bears=units.filter(u=>u.side<0);
      assets/bear.glb   (east force)
    e.g. KayKit's Space Ranger + Orc Raider (CC0). If the files or the
    loader aren't reachable, the built-in box soldiers are used instead. */
-const MODEL_YAW = Math.PI/2;  // rotate so characters face +X; if yours run sideways, try 0, Math.PI or -Math.PI/2
+const MODEL_YAW = Math.PI/2;
+let combatRanged=true;   // auto-set from the bull army's animation set  // rotate so characters face +X; if yours run sideways, try 0, Math.PI or -Math.PI/2
 function setAnim(u,name){
   if(!u.actions) return;
   const next=u.actions[name]||u.actions.idle;
@@ -442,9 +466,13 @@ function deployModel(gltf,arr,tint,weapon){
   const clips=gltf.animations||[];
   const get=(exact,re)=>clips.find(c=>c.name===exact)||clips.find(c=>re.test(c.name));
   const cIdle =get('Idle',/idle|stand|breath/i)||clips[0];
-  const cRun  =get('Run_Gun',/run|sprint|jog/i)||get('Walking_A',/walk|march/i)||cIdle;
+  const cRun  =get('Run_Gun',/run|sprint|jog|gallop/i)||get('Walking_A',/walk|march|trot/i)||cIdle;
   const cFire =get('2H_Ranged_Shooting',/shoot|firing|fire_|aim|attack|punch/i); // hold the line: aim / swing
   const cDeath=get('Death_A',/death|die|dead|fall/i);
+  if(arr===bulls){
+    combatRanged=!!(cFire && /ranged|shoot|gun|fire/i.test(cFire.name));
+    if(!combatRanged) for(const u of units) u.depth=Math.max(2.5,u.depth-4); // melee: close the lines
+  }
   for(const u of arr){
     const inst=THREE.SkeletonUtils.clone(src);
     if(weapon){
@@ -529,8 +557,26 @@ function loadScript(src){ return new Promise((res,rej)=>{
     let wB=null,wR=null;
     try{ [wB,wR]=await Promise.all([parseGlb(CROSSBOW_2H_B64),parseGlb(CROSSBOW_1H_B64)]); }
     catch(e){ console.log('weapons failed to parse:',e); }
-    deployModel(gB,bulls,null,wB);         // knight + heavy crossbow
-    deployModel(gR,bears,null,wR);         // barbarian + hand crossbow
+    deployModel(gB,bulls,null,wB);
+    deployModel(gR,bears,null,wR);
+    for(const [file,key] of [['assets/mech_bull.glb','b'],['assets/mech_bear.glb','r']]){
+      try{
+        const g=await load(file);
+        const M=machines[key];
+        while(M.grp.children.length) M.grp.remove(M.grp.children[0]);
+        const inst=THREE.SkeletonUtils.clone(g.scene);
+        const bb=new THREE.Box3().setFromObject(inst);
+        const s=8/Math.max(.001,bb.max.y-bb.min.y);
+        inst.scale.setScalar(s); inst.position.y=-bb.min.y*s;
+        inst.rotation.y=MODEL_YAW;
+        M.grp.add(inst);
+        if(g.animations&&g.animations.length){
+          M.mixer=new THREE.AnimationMixer(inst);
+          const c=g.animations.find(a=>/walk|run|idle/i.test(a.name))||g.animations[0];
+          M.mixer.clipAction(c).play();
+        }
+      }catch(e){} // no file: box machine stays
+    }
     portraitFromGltf(gB,$('pL'),.45,wB);
     portraitFromGltf(gR,$('pR'),-.45,wR);
     try{ // optional second marine variant for a mixed squad
@@ -600,6 +646,7 @@ function updateMachines(dt,fx,mom,T){
     const tx=retreat? M.homeX : fx - M.side*20;
     const dx=tx-M.grp.position.x;
     M.grp.position.x+=clamp(dx,-14*dt,14*dt);
+    if(M.mixer) M.mixer.update(dt);
     M.grp.position.y=Math.abs(Math.sin(T*3.2))*.35;           // stomp / rumble
     M.grp.rotation.z=Math.sin(T*3.2)*.02*M.side;
     if(retreat && Math.abs(dx)<2){ M.active=false; M.grp.visible=false; continue; }
@@ -746,9 +793,11 @@ function tryKill(mom){
   targets.sort((a,b)=>a.depth-b.depth);
   const victim=targets[(Math.random()*Math.min(6,targets.length))|0];
   const shooter=pick(shooters);
-  const from=shooter.root.position.clone(); from.y+=1.6;
   const to=victim.root.position.clone(); to.y+=1.5;
-  fireTracer(from,to,1);
+  if(combatRanged){
+    const from=shooter.root.position.clone(); from.y+=1.6;
+    fireTracer(from,to,1);
+  }
   setTimeout(()=>{
     if(!victim.alive) return;
     clash(to);
@@ -766,10 +815,15 @@ function tryKill(mom){
   },120);
 }
 let tracerT=0;
-function ambientFire(dt,mom){
+function ambientFire(dt,mom,fx){
   tracerT-=dt;
   if(tracerT>0) return;
   tracerT=rand(.1,.28)/(1+Math.abs(mom));
+  if(!combatRanged){ // melee: sparks and dust where the lines grind
+    clash(new THREE.Vector3(fx+rand(-5,5),rand(1,2.4),rand(-22,22)));
+    if(Math.random()<.35) impact(new THREE.Vector3(fx+rand(-6,6),1,rand(-24,24)));
+    return;
+  }
   const side=Math.random()<.5?1:-1;
   const arr=(side>0?bulls:bears).filter(u=>u.alive);
   const foe=(side>0?bears:bulls).filter(u=>u.alive);
@@ -903,7 +957,7 @@ function animate(){
 
   killTimer-=dt;
   if(killTimer<=0){ tryKill(mom); killTimer=rand(.35,1.1)/(1+Math.abs(mom)*2.2); }
-  ambientFire(dt,mom);
+  ambientFire(dt,mom,fx);
   updateMachines(dt,fx,mom,T);
 
   for(const u of units){
@@ -976,6 +1030,15 @@ function animate(){
     }
   }
 
+  if(flagGeo){ // cloth ripple
+    const p=flagGeo.attributes.position;
+    for(let i=0;i<p.count;i++){
+      const x=p.getX(i);
+      p.setZ(i, Math.sin(x*1.3 - T*5)*.32*(x/6.4));
+    }
+    p.needsUpdate=true;
+    flagGeo.computeVertexNormals();
+  }
   // the planet's halo carries the market mood: green for bulls, red for bears
   const mc=new THREE.Color(0xf7b478);
   mc.lerp(new THREE.Color(mom>0?0x3ddc84:0xff5252), Math.abs(mom)*.55);
