@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Lunar Front — BTCUSDT</title>
+<style>
+  :root{
+    --amber:#ffb84d; --amber-dim:#8f6a2e;
+    --bull:#6fa8ff; --bear:#e0704f;
+    --up:#3ddc84; --down:#ff5252;
+    --panel:rgba(4,8,16,.72);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#04060c}
+  body{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--amber);
+       -webkit-user-select:none;user-select:none;touch-action:none}
+  canvas{display:block}
+  .hud{position:fixed;z-index:10;pointer-events:none}
+  .panel{background:var(--panel);border:1px solid rgba(255,184,77,.28);backdrop-filter:blur(6px);
+         padding:10px 12px;border-radius:2px}
+
+  #ticker{top:10px;left:10px;min-width:200px}
+  #ticker .sym{font-size:10px;letter-spacing:.22em;color:var(--amber-dim)}
+  #ticker .px{font-size:26px;font-weight:700;color:#fff;line-height:1.15;font-variant-numeric:tabular-nums}
+  #ticker .dl{font-size:12px;font-variant-numeric:tabular-nums}
+  #ticker .dl.up{color:var(--up)} #ticker .dl.down{color:var(--down)}
+  #feedmode{display:inline-block;margin-left:8px;font-size:9px;letter-spacing:.18em;
+            padding:2px 6px;border:1px solid currentColor;border-radius:2px;color:var(--amber)}
+  #feedmode.live{color:var(--up)}
+
+  #war{bottom:14px;left:50%;transform:translateX(-50%);width:min(430px,72vw)}
+  #war .row{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.14em;margin-bottom:5px}
+  #war .b{color:var(--bull)} #war .r{color:var(--bear)}
+  #bar{position:relative;height:8px;background:rgba(255,255,255,.07);border:1px solid rgba(255,184,77,.25)}
+  #barfill{position:absolute;top:0;bottom:0;left:50%;width:0;background:var(--bull)}
+  #barpin{position:absolute;top:-3px;width:2px;height:14px;background:#fff;left:50%}
+  #war .cap{margin-top:5px;text-align:center;font-size:9px;letter-spacing:.24em;color:var(--amber-dim)}
+
+  #feed{top:10px;right:10px;width:min(300px,52vw);display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  #feed .k{background:var(--panel);border:1px solid rgba(255,184,77,.18);padding:4px 8px;font-size:11px;
+           border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+           animation:kin .25s ease-out;transition:opacity .6s}
+  @keyframes kin{from{transform:translateX(14px);opacity:0}to{transform:none;opacity:1}}
+  .fb{color:var(--bull)} .fr{color:var(--bear)} .fv{color:var(--amber-dim)}
+
+  #scan{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.5;
+        background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px)}
+  @media (max-width:640px){ #ticker .px{font-size:20px} #feed{width:58vw} }
+  @media (prefers-reduced-motion:reduce){ #feed .k{animation:none} }
+</style>
+</head>
+<body>
+<div id="scan"></div>
+
+<div class="hud panel" id="ticker">
+  <div class="sym">BTCUSDT · LUNAR FRONT<span id="feedmode">SIM</span></div>
+  <div class="px" id="px">—</div>
+  <div class="dl" id="dl">anchor ±0.000%</div>
+</div>
+
+<div class="hud panel" id="war">
+  <div class="row">
+    <span class="b">■ 1ST BULL BATTALION <span id="kb">0</span></span>
+    <span class="r"><span id="kr">0</span> BEAR COMPANY ■</span>
+  </div>
+  <div id="bar"><div id="barfill"></div><div id="barpin"></div></div>
+  <div class="cap">FRONTLINE · PRICE vs SESSION ANCHOR</div>
+</div>
+
+<div class="hud" id="feed"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   LUNAR FRONT — a near-future infantry engagement on the Moon,
+   driven by BTCUSDT. Price above the session anchor: the Bull
+   Battalion advances east. Below: Bear Company pushes them back.
+   No controls — the camera directs itself like a broadcast feed.
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+const rand = (a,b)=>a+Math.random()*(b-a);
+const pick = a => a[(Math.random()*a.length)|0];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let gaussSpare=null;
+function gauss(){ if(gaussSpare!==null){const v=gaussSpare;gaussSpare=null;return v;}
+  let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
+  const m=Math.sqrt(-2*Math.log(u)); gaussSpare=m*Math.sin(2*Math.PI*v); return m*Math.cos(2*Math.PI*v); }
+
+/* ---------------- renderer / scene ---------------- */
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060c);
+scene.fog = new THREE.FogExp2(0x070a12, 0.0032);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 2000);
+camera.position.set(0,40,120);
+
+scene.add(new THREE.AmbientLight(0x2c3140, .85));
+scene.add(new THREE.HemisphereLight(0x39404f, 0x14100b, .5));
+const sunLight = new THREE.DirectionalLight(0xfff1d6, 1.25);
+sunLight.position.set(-140,150,-120); scene.add(sunLight);
+
+/* ---------------- terrain ---------------- */
+const FIELD_X = 100;
+(function buildGround(){
+  const g = new THREE.PlaneGeometry(460, 300, 96, 62);
+  g.rotateX(-Math.PI/2);
+  const pos = g.attributes.position;
+  const craters=[]; for(let i=0;i<28;i++)
+    craters.push({x:rand(-200,200), z:rand(-130,130), r:rand(8,24), d:rand(1.5,4.5)});
+  const cols=[];
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i);
+    let y = Math.sin(x*.05)*Math.cos(z*.07)*1.6 + Math.sin(x*.13+z*.11)*.8;
+    for(const c of craters){
+      const d=Math.hypot(x-c.x,z-c.z);
+      if(d<c.r){ const t=d/c.r; y += -c.d*Math.cos(t*Math.PI/2) + c.d*.35*Math.exp(-((t-1)*(t-1))*24); }
+    }
+    const lane = clamp(1-Math.abs(z)/70,0,1)*clamp(1-Math.abs(x)/130,0,1);
+    y *= (1-lane*.75);
+    pos.setY(i,y);
+    const sh = .55 + y*.055 + rand(-.03,.03);   // grey regolith
+    cols.push(.30*sh, .30*sh, .32*sh);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  g.computeVertexNormals();
+  scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({vertexColors:true})));
+
+  const rockMat=new THREE.MeshLambertMaterial({color:0x3d3f45});
+  for(let i=0;i<46;i++){
+    const x=rand(-210,210), z=rand(-140,140);
+    if(Math.abs(x)<115 && Math.abs(z)<62) continue;
+    const r=new THREE.Mesh(new THREE.DodecahedronGeometry(rand(.8,3.6),0),rockMat);
+    r.position.set(x,rand(0,.6),z);
+    r.rotation.set(rand(0,3),rand(0,3),rand(0,3));
+    scene.add(r);
+  }
+})();
+
+/* wrecked hardware & cover on the field */
+(function buildProps(){
+  const hull=new THREE.MeshLambertMaterial({color:0x585c63});
+  const dark=new THREE.MeshLambertMaterial({color:0x33363c});
+  // downed dropship near the middle — the thing both sides are fighting over
+  const ship=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(3.2,3.8,26,10),hull);
+  body.rotation.z=Math.PI/2; ship.add(body);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(6,5,.7),dark); tail.position.set(-13,2.5,0); ship.add(tail);
+  const wingL=new THREE.Mesh(new THREE.BoxGeometry(9,.5,7),dark); wingL.position.set(2,1.5,-6); wingL.rotation.x=.5; ship.add(wingL);
+  const wingR=new THREE.Mesh(new THREE.BoxGeometry(9,.5,7),dark); wingR.position.set(4,.8,6.5); ship.add(wingR);
+  ship.position.set(6,1.4,-26); ship.rotation.set(.12,.7,.1);
+  scene.add(ship);
+  // habitat modules to the north
+  for(let i=0;i<3;i++){
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(4,4,14,12),new THREE.MeshLambertMaterial({color:0x6a6e76}));
+    h.rotation.z=Math.PI/2; h.position.set(-30+i*26, 3.6, 52+rand(-3,3)); h.rotation.y=rand(-.2,.2);
+    scene.add(h);
+    const win=new THREE.Mesh(new THREE.BoxGeometry(10,.9,.3),new THREE.MeshBasicMaterial({color:0xcfe7ff}));
+    win.position.copy(h.position); win.position.z-=4.05; win.position.y+=1.4; scene.add(win);
+  }
+  // scattered supply crates & barriers
+  const crate=new THREE.MeshLambertMaterial({color:0x4c5158});
+  for(let i=0;i<14;i++){
+    const c=new THREE.Mesh(new THREE.BoxGeometry(rand(1.6,3),rand(1.2,2),rand(1.6,3)),crate);
+    c.position.set(rand(-85,85),.8,rand(-46,46)); c.rotation.y=rand(0,3.14);
+    scene.add(c);
+  }
+  // defensive berms at each side's line of departure
+  const bermB=new THREE.MeshLambertMaterial({color:0x40444c});
+  for(let i=0;i<6;i++){
+    for(const s of [-1,1]){
+      const b=new THREE.Mesh(new THREE.BoxGeometry(2,1.8,7),bermB);
+      b.position.set(s*FIELD_X+rand(-4,4), .8, (i-2.5)*9);
+      b.rotation.y=rand(-.25,.25); b.rotation.z=rand(-.06,.06);
+      scene.add(b);
+    }
+  }
+})();
+
+/* ---------------- sky: stars, Earth, the ₿ marker ---------------- */
+(function buildSky(){
+  const sg=new THREE.BufferGeometry(); const sp=[];
+  for(let i=0;i<1700;i++){
+    const t=Math.acos(rand(-1,.35)), p=rand(0,Math.PI*2), r=780;
+    sp.push(r*Math.sin(t)*Math.cos(p), Math.abs(r*Math.cos(t))-40, r*Math.sin(t)*Math.sin(p));
+  }
+  sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
+  scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xd8ddff,size:1.5,sizeAttenuation:false})));
+
+  // Earth on the horizon
+  const ec=document.createElement('canvas'); ec.width=ec.height=256;
+  const ex=ec.getContext('2d');
+  const eg=ex.createRadialGradient(110,100,20,128,128,128);
+  eg.addColorStop(0,'#9fd0ff'); eg.addColorStop(.55,'#2f6fca'); eg.addColorStop(1,'#0c2a5e');
+  ex.fillStyle=eg; ex.beginPath(); ex.arc(128,128,124,0,7); ex.fill();
+  ex.fillStyle='rgba(255,255,255,.5)';
+  for(let i=0;i<9;i++){ ex.beginPath();
+    ex.ellipse(rand(40,216),rand(40,216),rand(14,42),rand(6,14),rand(0,3),0,7); ex.fill(); }
+  const eTex=new THREE.CanvasTexture(ec);
+  const earth=new THREE.Mesh(new THREE.CircleGeometry(30,48),new THREE.MeshBasicMaterial({map:eTex}));
+  earth.position.set(-180,70,-320); scene.add(earth);
+  earth.onBeforeRender=()=>earth.lookAt(camera.position);
+})();
+
+/* the objective: a comms mast broadcasting the price — its beacon is the ₿ */
+let beaconMat, beaconSpr;
+(function buildMast(){
+  const mast=new THREE.Group();
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.35,.6,26,8),
+    new THREE.MeshLambertMaterial({color:0x7a7f88}));
+  pole.position.y=13; mast.add(pole);
+  const dish=new THREE.Mesh(new THREE.CylinderGeometry(2.6,.4,1.6,10),
+    new THREE.MeshLambertMaterial({color:0x9aa0aa}));
+  dish.position.set(0,24,0); dish.rotation.z=.9; mast.add(dish);
+  for(let i=0;i<3;i++){
+    const strut=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,15,4),
+      new THREE.MeshLambertMaterial({color:0x555a62}));
+    strut.position.set(Math.cos(i*2.1)*4,6.5,Math.sin(i*2.1)*4);
+    strut.lookAt(0,13,0); strut.rotateX(Math.PI/2);
+    mast.add(strut);
+  }
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const x=c.getContext('2d');
+  const g=x.createRadialGradient(64,64,6,64,64,64);
+  g.addColorStop(0,'rgba(255,200,120,.95)'); g.addColorStop(.35,'rgba(247,147,26,.5)');
+  g.addColorStop(1,'rgba(247,147,26,0)');
+  x.fillStyle=g; x.fillRect(0,0,128,128);
+  x.fillStyle='#3a2000'; x.font='bold 56px Arial'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText('₿',64,66);
+  beaconMat=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),
+    blending:THREE.AdditiveBlending,depthWrite:false,transparent:true});
+  beaconSpr=new THREE.Sprite(beaconMat);
+  beaconSpr.position.y=27; beaconSpr.scale.set(9,9,1);
+  mast.add(beaconSpr);
+  mast.position.set(0,0,8);
+  scene.add(mast);
+})();
+
+/* ---------------- soldier geometry (merged boxes, 1 draw call/unit) ---- */
+function mergeBoxes(parts){
+  const positions=[], normals=[], colors=[];
+  const col=new THREE.Color();
+  for(const p of parts){
+    let bg=new THREE.BoxGeometry(p.w,p.h,p.d).toNonIndexed();
+    if(p.ry) bg.rotateY(p.ry);
+    if(p.rz) bg.rotateZ(p.rz);
+    bg.translate(p.x||0,p.y||0,p.z||0);
+    const pa=bg.attributes.position.array, na=bg.attributes.normal.array;
+    col.setHex(p.c);
+    for(let i=0;i<pa.length;i+=3){
+      positions.push(pa[i],pa[i+1],pa[i+2]);
+      normals.push(na[i],na[i+1],na[i+2]);
+      colors.push(col.r,col.g,col.b);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  return g;
+}
+const unitMat=new THREE.MeshLambertMaterial({vertexColors:true});
+const RIFLE=0x1e2126, VISOR=0xbfe4ff, PACK=0x2c2f35;
+// EVA combat suits — realistic silhouette: helmet, chest rig, life-support pack, rifle
+function suitGeo(main,dark,accent){
+  return mergeBoxes([
+    {w:.42,h:1.1,d:.42,x:0,y:.55,z:-.24,c:dark},{w:.42,h:1.1,d:.42,x:0,y:.55,z:.24,c:dark},   // legs
+    {w:.3,h:.2,d:.5,x:.08,y:.1,z:-.24,c:dark},{w:.3,h:.2,d:.5,x:.08,y:.1,z:.24,c:dark},       // boots
+    {w:.68,h:1.05,d:.95,x:0,y:1.62,z:0,c:main},                                                // torso
+    {w:.72,h:.5,d:.99,x:.02,y:1.78,z:0,c:dark},                                                // chest rig
+    {w:.14,h:.18,d:.3,x:.38,y:1.55,z:-.22,c:accent},                                           // unit patch
+    {w:.34,h:.85,d:.34,x:-.02,y:1.6,z:-.62,rz:.12,c:main},                                     // arm L
+    {w:.34,h:.85,d:.34,x:.18,y:1.55,z:.6,rz:-.4,c:main},                                       // arm R (aiming)
+    {w:.52,h:.56,d:.52,x:.03,y:2.42,z:0,c:main},                                               // helmet
+    {w:.1,h:.24,d:.4,x:.31,y:2.44,z:0,c:VISOR},                                                // visor
+    {w:.44,h:.8,d:.62,x:-.5,y:1.75,z:0,c:PACK},                                                // life-support pack
+    {w:.09,h:.5,d:.09,x:-.5,y:2.45,z:.2,c:dark},                                               // antenna
+    {w:1.25,h:.2,d:.16,x:.62,y:1.5,z:.42,c:RIFLE},{w:.22,h:.4,d:.16,x:.42,y:1.28,z:.42,c:RIFLE},// rifle
+  ]);
+}
+const bullGeo = suitGeo(0x5a646f, 0x3c434c, 0x6fa8ff);  // slate-grey suits, blue patch
+const bearGeo = suitGeo(0x6d6455, 0x453f34, 0xe0704f);  // sand-brown suits, red patch
+
+/* ---------------- forces ---------------- */
+const BULL_NAMES=['Sgt. Reyes','Cpl. Chen','Pvt. Okafor','Lt. Hansen','Cpl. Marsh','Pvt. Iyer',
+ 'Sgt. Duval','Pvt. Kowalski','Cpl. Tanaka','Pvt. Silva','Sgt. Brandt','Pvt. Nunez',
+ 'Cpl. Ferro','Pvt. Lindqvist','Sgt. Adeyemi','Pvt. Cho'];
+const BEAR_NAMES=['Sgt. Kade','Cpl. Ruiz','Pvt. Malik','Lt. Sorren','Cpl. Vane','Pvt. Ashford',
+ 'Sgt. Petric','Pvt. Doyle','Cpl. Aslan','Pvt. Marek','Sgt. Iversen','Pvt. Gallo',
+ 'Cpl. Sato','Pvt. Renner','Sgt. Obi','Pvt. Kraus'];
+const VERBS=['took down','eliminated','dropped','neutralized','hit','picked off','caught'];
+const MEANS=['· rifle fire','· marksman','· crossfire','· suppressing fire','· grenade','· close range'];
+
+const PER_SIDE=40, ROWS=8;
+const units=[];
+function makeSide(side){ // +1 bulls (west, face +x) | -1 bears (east, face -x)
+  const geo = side>0?bullGeo:bearGeo;
+  const names = side>0?BULL_NAMES:BEAR_NAMES;
+  for(let i=0;i<PER_SIDE;i++){
+    const root=new THREE.Group();
+    const box=new THREE.Mesh(geo,unitMat);
+    root.add(box);
+    const row=i%ROWS, rank=(i/ROWS)|0;
+    const u={root,visual:box,mixer:null,actions:null,current:null,
+      side,rank,alive:true,deadAt:0,respawnAt:0,
+      z:(row-(ROWS-1)/2)*6+rand(-1.8,1.8),
+      depth:6+rank*5.5+rand(-1.5,1.5),
+      seed:rand(0,100),
+      crouchT:rand(0,10),
+      speed:rand(.85,1.2)*6.5,
+      name:names[i%names.length]};
+    root.position.set(side>0?-40-u.depth:40+u.depth, 0, u.z);
+    root.rotation.y = side>0?0:Math.PI;
+    scene.add(root); units.push(u);
+  }
+}
+makeSide(1); makeSide(-1);
+const bulls=units.filter(u=>u.side>0), bears=units.filter(u=>u.side<0);
+
+/* ---------------- optional GLB characters (drop-in) ----------------
+   Put two rigged/animated models next to this file:
+     assets/bull.glb   (west force)
+     assets/bear.glb   (east force)
+   e.g. KayKit's Space Ranger + Orc Raider (CC0). If the files or the
+   loader aren't reachable, the built-in box soldiers are used instead. */
+const MODEL_YAW = Math.PI/2;  // rotate so characters face +X; if yours run sideways, try 0, Math.PI or -Math.PI/2
+function setAnim(u,name){
+  if(!u.actions) return;
+  const next=u.actions[name]||u.actions.idle;
+  if(!next||u.current===next) return;
+  next.reset().fadeIn(.18).play();
+  if(u.current) u.current.fadeOut(.18);
+  u.current=next;
+}
+function deployModel(gltf,arr){
+  const src=gltf.scene;
+  const bb=new THREE.Box3().setFromObject(src);
+  const h=Math.max(bb.max.y-bb.min.y,.001);
+  const s=2.9/h;                                  // normalise to soldier height
+  const clips=gltf.animations||[];
+  const get=(exact,re)=>clips.find(c=>c.name===exact)||clips.find(c=>re.test(c.name));
+  const cIdle =get('Idle',/idle/i)||clips[0];
+  const cRun  =get('Running_A',/run/i)||get('Walking_A',/walk/i)||cIdle;
+  const cFire =get('2H_Ranged_Shooting',/ranged_shoot/i);      // hold the line, keep firing
+  const cDeath=get('Death_A',/death|die/i);
+  for(const u of arr){
+    const inst=THREE.SkeletonUtils.clone(src);
+    inst.scale.setScalar(s);
+    inst.position.y=-bb.min.y*s;
+    inst.rotation.y=MODEL_YAW;
+    const wrap=new THREE.Group(); wrap.add(inst);
+    u.root.remove(u.visual);
+    u.visual=wrap; u.root.add(wrap);
+    if(clips.length){
+      u.mixer=new THREE.AnimationMixer(inst);
+      u.actions={};
+      if(cIdle) u.actions.idle=u.mixer.clipAction(cIdle);
+      if(cRun)  u.actions.run =u.mixer.clipAction(cRun);
+      if(cFire) u.actions.fire=u.mixer.clipAction(cFire);
+      if(cDeath){ const a=u.mixer.clipAction(cDeath);
+        a.setLoop(THREE.LoopOnce); a.clampWhenFinished=true; u.actions.death=a; }
+      u.mixer.update(rand(0,1));                  // desync the crowd
+      setAnim(u,'idle');
+    }
+  }
+}
+function loadScript(src){ return new Promise((res,rej)=>{
+  const s=document.createElement('script'); s.src=src;
+  s.onload=res; s.onerror=()=>rej(new Error('script blocked: '+src));
+  document.head.appendChild(s); }); }
+(async function loadModels(){
+  try{
+    await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js');
+    await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js');
+    const loader=new THREE.GLTFLoader();
+    const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
+    const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
+    deployModel(gB,bulls); deployModel(gR,bears);
+    console.log('Lunar Front: GLB characters deployed');
+  }catch(e){
+    console.log('Lunar Front: built-in soldiers active — '+(e&&e.message?e.message:e));
+  }
+})();
+
+/* ---------------- tracers, impacts, smoke ---------------- */
+const laserGeo=new THREE.BoxGeometry(.1,.1,1); laserGeo.translate(0,0,.5);
+const tracerMat=new THREE.MeshBasicMaterial({color:0xffe9b0,blending:THREE.AdditiveBlending,transparent:true});
+const lasers=[];
+function fireTracer(from,to){
+  const m=new THREE.Mesh(laserGeo,tracerMat.clone());
+  m.position.copy(from); m.lookAt(to);
+  m.scale.z=from.distanceTo(to);
+  scene.add(m); lasers.push({m,life:.1});
+}
+const bursts=[];
+function impact(p){ // regolith kicked up — grey dust, no fireball (vacuum)
+  const N=30, g=new THREE.BufferGeometry();
+  const pos=new Float32Array(N*3), vel=[];
+  for(let i=0;i<N;i++){ pos[i*3]=p.x;pos[i*3+1]=Math.max(.2,p.y-1);pos[i*3+2]=p.z;
+    vel.push(new THREE.Vector3(gauss()*.7,Math.abs(gauss())*1.6,gauss()*.7).multiplyScalar(rand(3,9))); }
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  const mat=new THREE.PointsMaterial({color:0x9a9da5,size:.5,transparent:true,depthWrite:false});
+  const pts=new THREE.Points(g,mat); scene.add(pts);
+  bursts.push({pts,vel,life:.9,max:.9});
+}
+/* slow smoke columns from wrecks */
+const smokes=[];
+(function(){
+  const c=document.createElement('canvas'); c.width=c.height=64;
+  const x=c.getContext('2d'); const g=x.createRadialGradient(32,32,4,32,32,32);
+  g.addColorStop(0,'rgba(120,120,128,.5)'); g.addColorStop(1,'rgba(120,120,128,0)');
+  x.fillStyle=g; x.fillRect(0,0,64,64);
+  const tex=new THREE.CanvasTexture(c);
+  const srcs=[[6,-26],[  -44,30],[52,-38]];
+  for(const [sx,sz] of srcs) for(let i=0;i<5;i++){
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false,opacity:.35}));
+    s.position.set(sx+rand(-2,2), rand(2,16), sz+rand(-2,2));
+    s.scale.setScalar(rand(4,9));
+    smokes.push({s,sx,sz,v:rand(1.2,2.4)});
+    scene.add(s);
+  }
+})();
+
+/* ---------------- price engine ---------------- */
+const price={ p:64500, target:64500, anchor:64500, emaF:64500, emaS:64500, live:false, ws:null, poll:0 };
+let trend=0;
+function simStep(dt){
+  trend += (-trend*.15 + gauss()*.9)*dt;
+  const vol=.0024;
+  price.target *= Math.exp(vol*Math.sqrt(dt)*gauss() + trend*.00035*dt);
+  if(Math.random()<dt*.1) price.target*=Math.exp(rand(-.004,.004));
+}
+function priceStep(dt){
+  if(!price.live) simStep(dt);
+  price.p += (price.target-price.p)*Math.min(1,dt*6);
+  const aF=1-Math.exp(-dt/4), aS=1-Math.exp(-dt/45), aA=1-Math.exp(-dt/240);
+  price.emaF+= (price.p-price.emaF)*aF;
+  price.emaS+= (price.p-price.emaS)*aS;
+  price.anchor+=(price.p-price.anchor)*aA;
+}
+const frontline = ()=> Math.tanh((price.p/price.anchor-1)*(price.live?800:420))*FIELD_X*.72;
+const momentum  = ()=> clamp((price.emaF/price.emaS-1)*(price.live?2600:1200),-1,1);
+
+function setFeedBadge(){
+  const b=$('feedmode');
+  b.textContent = price.live?'LIVE':'SIM';
+  b.className = price.live?'live':'';
+}
+/* connect automatically, fall back silently to sim */
+(function autoLive(){
+  let opened=false;
+  const seed=v=>{ price.p=price.target=price.emaF=price.emaS=price.anchor=v; };
+  try{
+    const ws=new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+    price.ws=ws;
+    ws.onmessage=ev=>{
+      const v=parseFloat(JSON.parse(ev.data).p);
+      if(!opened){ opened=true; price.live=true; seed(v); setFeedBadge(); }
+      price.target=v;
+    };
+    ws.onclose=()=>{ if(opened){ price.live=false; setFeedBadge(); } };
+    setTimeout(()=>{ if(!opened){ try{ws.close();}catch(e){} fallbackPoll(); } },4000);
+  }catch(e){ fallbackPoll(); }
+  function fallbackPoll(){
+    let ok=false;
+    const tick=()=>fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')
+      .then(r=>r.json()).then(j=>{
+        const v=j.bitcoin.usd;
+        if(!ok){ ok=true; price.live=true; seed(v); setFeedBadge(); }
+        price.target=v;
+      }).catch(()=>{ if(!ok) clearInterval(price.poll); }); // stay in sim, no fuss
+    tick(); price.poll=setInterval(tick,15000);
+  }
+})();
+
+/* ---------------- combat ---------------- */
+let killsB=0,killsR=0,killTimer=0;
+const feedEl=$('feed');
+function addFeed(killer,victim,side){
+  const div=document.createElement('div'); div.className='k';
+  const kc=side>0?'fb':'fr', vc=side>0?'fr':'fb';
+  div.innerHTML=`<span class="${kc}">${killer}</span> <span class="fv">${pick(VERBS)}</span> `+
+                `<span class="${vc}">${victim}</span> <span class="fv">${pick(MEANS)}</span>`;
+  feedEl.prepend(div);
+  while(feedEl.children.length>7) feedEl.lastChild.remove();
+  setTimeout(()=>{div.style.opacity=.25;},6000);
+}
+function tryKill(mom){
+  const bias=.5+mom*.42;
+  const bullScores=Math.random()<bias;
+  const shooters=(bullScores?bulls:bears).filter(u=>u.alive);
+  const targets =(bullScores?bears:bulls).filter(u=>u.alive);
+  if(!shooters.length||!targets.length) return;
+  targets.sort((a,b)=>a.depth-b.depth);
+  const victim=targets[(Math.random()*Math.min(6,targets.length))|0];
+  const shooter=pick(shooters);
+  const from=shooter.root.position.clone(); from.y+=1.5;
+  const to=victim.root.position.clone(); to.y+=1.5;
+  fireTracer(from,to);
+  setTimeout(()=>{
+    if(!victim.alive) return;
+    victim.alive=false; victim.deadAt=clock.getElapsedTime();
+    victim.respawnAt=victim.deadAt+rand(3,5.5);
+    if(victim.actions&&victim.actions.death){
+      if(victim.current) victim.current.fadeOut(.1);
+      victim.current=victim.actions.death;
+      victim.actions.death.reset().fadeIn(.1).play();
+    }
+    impact(to);
+    if(shooter.side>0) killsB++; else killsR++;
+    $('kb').textContent=killsB; $('kr').textContent=killsR;
+    addFeed(shooter.name,victim.name,shooter.side);
+    if(camFocus===victim) camFocus=null;
+  },120);
+}
+let tracerT=0;
+function ambientFire(dt){
+  tracerT-=dt;
+  if(tracerT>0) return;
+  tracerT=rand(.09,.24);
+  const side=Math.random()<.5?1:-1;
+  const arr=(side>0?bulls:bears).filter(u=>u.alive);
+  const foe=(side>0?bears:bulls).filter(u=>u.alive);
+  if(!arr.length||!foe.length) return;
+  const s=pick(arr), t=pick(foe);
+  const from=s.root.position.clone(); from.y+=1.5;
+  const to=t.root.position.clone(); to.y+=rand(.8,2.2);
+  to.x+=rand(-3,3); to.z+=rand(-3,3);
+  fireTracer(from,to);
+  if(Math.random()<.25) impact(new THREE.Vector3(to.x,1,to.z)); // near-miss dust
+}
+
+/* ---------------- broadcast camera (fully automatic) ---------------- */
+let camFocus=null, shotT=99, shotKind=0, shotSeed=0;
+function newShot(fx){
+  shotT=0; shotSeed=Math.random()*1000;
+  const r=Math.random();
+  if(r<.4){ shotKind=0; }                                     // wide orbit
+  else if(r<.72){ shotKind=1;                                  // embed with a soldier
+    const alive=units.filter(u=>u.alive).sort((a,b)=>a.depth-b.depth);
+    camFocus=alive[(Math.random()*Math.min(10,alive.length))|0]||null;
+    if(!camFocus) shotKind=0;
+  }
+  else if(r<.88){ shotKind=2; }                                // low tracking shot along the line
+  else { shotKind=3; }                                         // objective mast reveal
+}
+function updateCamera(dt,fx){
+  shotT+=dt;
+  const dur=shotKind===1?9:13;
+  if(shotT>dur) newShot(fx);
+  const mid=new THREE.Vector3(fx,3,0);
+  const ease=1-Math.exp(-dt*(shotT<.7?4:1.1));
+  if(shotKind===0){
+    const t=clock.getElapsedTime()*.045+shotSeed;
+    const r=80+Math.sin(shotSeed*3.7)*30, h=18+((shotSeed*7)%1)*34;
+    camera.position.lerp(new THREE.Vector3(mid.x+Math.cos(t)*r,h,Math.sin(t)*r*.8),ease);
+    camera.lookAt(mid);
+  } else if(shotKind===1 && camFocus && camFocus.alive){
+    const p=camFocus.root.position, back=camFocus.side>0?-10:10;
+    camera.position.lerp(new THREE.Vector3(p.x+back,5.5,p.z+6),1-Math.exp(-dt*2.4));
+    camera.lookAt(p.x+camFocus.side*18,2,p.z);
+  } else if(shotKind===2){
+    const t=(shotT/13);
+    const z=-46+t*92, side=shotSeed%2<1?-1:1;
+    camera.position.lerp(new THREE.Vector3(fx+side*26,4.5,z),ease);
+    camera.lookAt(fx-side*10,2,z*.6);
+  } else {
+    const t=clock.getElapsedTime()*.06+shotSeed;
+    camera.position.lerp(new THREE.Vector3(Math.cos(t)*34,10+shotT*1.6,8+Math.sin(t)*34),ease);
+    camera.lookAt(0,16+shotT*.8,8);
+  }
+  if(shotKind===1 && (!camFocus||!camFocus.alive)) newShot(fx);
+}
+newShot(0);
+
+/* ---------------- HUD ---------------- */
+const fmt=v=>v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+function updateHUD(fx){
+  $('px').textContent='$'+fmt(price.p);
+  const d=(price.p/price.anchor-1)*100;
+  const dl=$('dl');
+  dl.textContent=`anchor ${d>=0?'+':''}${d.toFixed(3)}%`;
+  dl.className='dl '+(d>=0?'up':'down');
+  const n=fx/(FIELD_X*.72);
+  const fill=$('barfill');
+  if(n>=0){ fill.style.left='50%'; fill.style.width=(n*50)+'%'; fill.style.background='var(--bull)'; }
+  else    { fill.style.left=(50+n*50)+'%'; fill.style.width=(-n*50)+'%'; fill.style.background='var(--bear)'; }
+  $('barpin').style.left=(50+n*50)+'%';
+}
+
+/* ---------------- main loop ---------------- */
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.1), T=clock.getElapsedTime();
+  priceStep(dt);
+  const fx=frontline(), mom=momentum();
+
+  killTimer-=dt;
+  if(killTimer<=0){ tryKill(mom); killTimer=rand(.35,1.1)/(1+Math.abs(mom)*2.2); }
+  ambientFire(dt);
+
+  for(const u of units){
+    const m=u.root;
+    if(!u.alive){
+      const since=T-u.deadAt;
+      if(u.actions&&u.actions.death){
+        u.mixer.update(dt);                                   // play out the death anim
+        m.position.y=-Math.min(1.3,Math.max(0,since-1.9)*1.1); // then sink into the regolith
+      }else{
+        m.rotation.z=u.side*Math.min(1,since*3.5)*Math.PI/2*.92;
+        m.position.y=-Math.min(1.2,Math.max(0,since-1.8)*1.2);
+      }
+      if(T>u.respawnAt){
+        u.alive=true; m.rotation.z=0; m.position.y=0;
+        u.depth=24+u.rank*5+rand(-2,2);
+        m.position.x=u.side>0? -FIELD_X : FIELD_X;
+        m.position.z=u.z;
+        if(u.actions){
+          if(u.actions.death) u.actions.death.stop();
+          u.current=null; setAnim(u,'run');
+        }
+      }
+      continue;
+    }
+    const tx=clamp(fx - u.side*u.depth, -FIELD_X, FIELD_X);
+    const dx=tx-m.position.x;
+    const step=clamp(dx,-u.speed*dt,u.speed*dt);
+    m.position.x+=step;
+    m.position.z=u.z+Math.sin(T*.35+u.seed)*1.3;
+    const moving=Math.abs(dx)>.4;
+    if(u.mixer){
+      u.mixer.update(dt);
+      setAnim(u,moving?'run':'fire');
+      m.position.y=0; m.rotation.x=0;
+      m.rotation.y=(u.side>0?0:Math.PI)+Math.sin(T*.6+u.seed)*.08;
+    }else{
+      // low bounding run in lunar gravity; kneel behind cover when static
+      u.crouchT+=dt;
+      const crouch = !moving && Math.sin(u.crouchT*.5+u.seed)>0.2 ? .35 : 0;
+      m.position.y = moving ? Math.abs(Math.sin(T*5.5+u.seed))*.5 : -crouch;
+      m.rotation.x = moving ? Math.sin(T*5.5+u.seed)*.06 : (crouch?.18:0);
+      m.rotation.y = (u.side>0?0:Math.PI)+Math.sin(T*.6+u.seed)*.1;
+    }
+  }
+
+  for(let i=lasers.length-1;i>=0;i--){ const L=lasers[i]; L.life-=dt;
+    L.m.material.opacity=Math.max(0,L.life/.1);
+    if(L.life<=0){ scene.remove(L.m); L.m.material.dispose(); lasers.splice(i,1);} }
+  for(let i=bursts.length-1;i>=0;i--){ const B=bursts[i]; B.life-=dt;
+    const pos=B.pts.geometry.attributes.position;
+    for(let j=0;j<B.vel.length;j++){
+      pos.setX(j,pos.getX(j)+B.vel[j].x*dt);
+      pos.setY(j,Math.max(0,pos.getY(j)+B.vel[j].y*dt));
+      pos.setZ(j,pos.getZ(j)+B.vel[j].z*dt);
+      B.vel[j].y-=9*dt;   // lunar gravity: dust hangs
+    }
+    pos.needsUpdate=true;
+    B.pts.material.opacity=(B.life/B.max)*.9;
+    if(B.life<=0){ scene.remove(B.pts); B.pts.geometry.dispose(); B.pts.material.dispose(); bursts.splice(i,1);} }
+
+  for(const s of smokes){
+    s.s.position.y+=s.v*dt;
+    s.s.scale.multiplyScalar(1+dt*.12);
+    s.s.material.opacity-=dt*.05;
+    if(s.s.position.y>22||s.s.material.opacity<=0){
+      s.s.position.set(s.sx+rand(-2,2),rand(1,3),s.sz+rand(-2,2));
+      s.s.scale.setScalar(rand(3,6));
+      s.s.material.opacity=.35;
+    }
+  }
+
+  // the ₿ beacon pulses with momentum: green tint bulls, red tint bears
+  const mc=new THREE.Color(0xf7931a);
+  mc.lerp(new THREE.Color(mom>0?0x3ddc84:0xff5252), Math.abs(mom)*.5);
+  beaconMat.color.copy(mc);
+  const pulse=1+Math.sin(T*2.2)*.12+Math.abs(mom)*.3;
+  beaconSpr.scale.set(9*pulse,9*pulse,1);
+
+  updateCamera(dt,fx);
+  updateHUD(fx);
+  renderer.render(scene,camera);
+}
+setFeedBadge();
+animate();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
