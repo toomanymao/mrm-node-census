@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Desert Front — BTC/USD</title>
+<title>The Battle For Bitcoin — BTC/USD</title>
 <style>
   :root{
     --amber:#ffb84d; --amber-dim:#8f6a2e;
@@ -24,17 +24,18 @@
             padding:2px 6px;border:1px solid currentColor;border-radius:2px;color:var(--amber)}
   #feedmode.live{color:var(--up)}
 
-  /* merged bottom gauge: portrait · bulls bar · PRICE · bears bar · portrait */
+  /* merged bottom gauge: portraits · labels · PRICE, one frontline bar beneath */
   #war{bottom:14px;left:50%;transform:translateX(-50%);width:min(680px,94vw);
-       display:flex;align-items:center;gap:10px}
-  .side{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
-  #sideL .lbl{text-align:left} #sideR .lbl{text-align:right}
-  .lbl{font-size:10px;letter-spacing:.14em;white-space:nowrap}
-  .lbl.b{color:var(--bull)} .lbl.r{color:var(--bear)}
-  .halfbar{position:relative;height:8px;background:rgba(255,255,255,.07);
-           border:1px solid rgba(255,184,77,.25)}
-  .fillL{position:absolute;top:0;bottom:0;right:0;width:0;background:var(--bull)}
-  .fillR{position:absolute;top:0;bottom:0;left:0;width:0;background:var(--bear)}
+       display:flex;flex-direction:column;gap:8px}
+  #warrow{display:flex;align-items:center;gap:12px}
+  .lbl{font-size:10px;letter-spacing:.14em;white-space:nowrap;flex:1}
+  .lbl.b{color:var(--bull);text-align:left} .lbl.r{color:var(--bear);text-align:right}
+  #bar{position:relative;height:9px;background:rgba(255,255,255,.07);
+       border:1px solid rgba(255,184,77,.25)}
+  #bar::before{content:'';position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;
+               background:rgba(255,184,77,.4)}
+  #barfill{position:absolute;top:0;bottom:0;left:50%;width:0;background:var(--bull)}
+  #barpin{position:absolute;top:-3px;width:2px;height:15px;background:#fff;left:50%}
   #pxblock{flex:0 0 auto;text-align:center;padding:0 4px}
   #pxblock .px{font-size:22px;font-weight:700;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums}
   #pxblock .dl{font-size:10px;font-variant-numeric:tabular-nums}
@@ -91,8 +92,8 @@
 <div id="scan"></div>
 
 <div class="hud panel" id="topbar">
-  <span class="ttl">SPACE RANGERS vs ORCS</span>
-  <span class="ver" id="ver">1.19</span>
+  <span class="ttl">THE BATTLE FOR BITCOIN</span>
+  <span class="ver" id="ver">1.21</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -104,21 +105,18 @@
 </div>
 
 <div class="hud panel" id="war">
-  <img id="pL" class="portrait" alt="">
-  <div class="side" id="sideL">
+  <div id="warrow">
+    <img id="pL" class="portrait" alt="">
     <div class="lbl b">■ BULLS <span id="kb">0</span></div>
-    <div class="halfbar"><div id="barLfill" class="fillL"></div></div>
-  </div>
-  <div id="pxblock">
-    <div class="px" id="px">—</div>
-    <div class="dl" id="dl">BTC/USD</div>
-    <div class="sub">BTC/USD · DESERT FRONT<span id="feedmode">SIM</span></div>
-  </div>
-  <div class="side" id="sideR">
+    <div id="pxblock">
+      <div class="px" id="px">—</div>
+      <div class="dl" id="dl">BTC/USD</div>
+      <div class="sub">BTC/USD · DESERT FRONT<span id="feedmode">SIM</span></div>
+    </div>
     <div class="lbl r"><span id="kr">0</span> BEARS ■</div>
-    <div class="halfbar"><div id="barRfill" class="fillR"></div></div>
+    <img id="pR" class="portrait" alt="">
   </div>
-  <img id="pR" class="portrait" alt="">
+  <div id="bar"><div id="barfill"></div><div id="barpin"></div></div>
 </div>
 <button id="camBtn">CAM · AUTO</button>
 
@@ -133,7 +131,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='1.19';
+const APP_VERSION='1.21';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -583,14 +581,15 @@ function loadScript(src){ return new Promise((res,rej)=>{
       catch(e){ console.log('animation library missing (assets/anims.glb)'); }
     }
     const loadOpt=u=>load(u).then(g=>g.scene).catch(()=>null);
-    const [wB,wRa,wRb]=await Promise.all([
+    const [wB,wB2,wRa,wRb]=await Promise.all([
       loadOpt('assets/weapon_bull.glb'),
+      loadOpt('assets/weapon_bull2.glb'),
       loadOpt('assets/weapon_bear.glb'),
       loadOpt('assets/weapon_bear2.glb')]);
-    console.log('[weapons] rifle:',wB?'loaded':'MISSING',
+    console.log('[weapons] rifle:',wB?'loaded':'MISSING','| shotgun:',wB2?'loaded':'MISSING',
                 '| axe:',wRa?'loaded':'MISSING','| club:',wRb?'loaded':'MISSING');
     sB.forEach((g,v)=>deployModel(g,bulls.filter((u,i)=>i%sB.length===v),
-      null,wB?[wB]:null,'ranged','b'));                            // ranged coalition: rifles
+      null,[wB,wB2].filter(Boolean),'ranged','b'));                // ranged coalition: rifles & shotguns
     sR.forEach((g,v)=>deployModel(g,bears.filter((u,i)=>i%sR.length===v),
       null,[wRa,wRb].filter(Boolean),'melee','r'));                // melee horde: axes & clubs
     for(const [file,key] of [['assets/mech_bull.glb','b'],['assets/mech_bear.glb','r']]){
@@ -975,9 +974,11 @@ function updateHUD(fx){
   const dl=$('dl');
   dl.textContent=`anchor ${d>=0?'+':''}${d.toFixed(3)}%`;
   dl.className='dl '+(d>=0?'up':'down');
-  const n=fx/(FIELD_X*.72);
-  $('barLfill').style.width=(n>0? n*100:0)+'%';
-  $('barRfill').style.width=(n<0?-n*100:0)+'%';
+  const n=fx/(FIELD_X*.72);   // -1 bears .. +1 bulls; bulls advance LEFT-of-frame territory
+  const fill=$('barfill');
+  if(n>=0){ fill.style.left=(50-n*50)+'%'; fill.style.width=(n*50)+'%'; fill.style.background='var(--bull)'; }
+  else    { fill.style.left='50%'; fill.style.width=(-n*50)+'%'; fill.style.background='var(--bear)'; }
+  $('barpin').style.left=(50-n*50)+'%';
 }
 
 /* ---------------- main loop ---------------- */
