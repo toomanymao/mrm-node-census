@@ -44,14 +44,38 @@
   @keyframes kin{from{transform:translateX(14px);opacity:0}to{transform:none;opacity:1}}
   .fb{color:var(--bull)} .fr{color:var(--bear)} .fv{color:var(--amber-dim)}
 
+  #credits{top:10px;left:50%;transform:translateX(-50%);max-width:min(560px,46vw);
+           text-align:center;font-size:9px;letter-spacing:.12em;line-height:1.7;
+           color:var(--amber-dim);pointer-events:auto;padding:7px 12px}
+  #credits b{color:var(--amber);font-weight:700;letter-spacing:.18em}
+  #credits a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(255,184,77,.4)}
+  #credits a:hover{color:#fff;border-color:#fff}
   #scan{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.5;
         background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.12) 3px 4px)}
-  @media (max-width:640px){ #ticker .px{font-size:20px} #feed{width:58vw} }
+  #camBtn{position:fixed;bottom:14px;right:12px;z-index:11;pointer-events:auto;
+          background:var(--panel);border:1px solid rgba(255,184,77,.35);color:var(--amber);
+          font:inherit;font-size:9px;letter-spacing:.16em;padding:8px 11px;border-radius:2px;cursor:pointer}
+  #camBtn.free{color:#fff;border-color:var(--amber)}
+  #camBtn:active{transform:translateY(1px)}
+  @media (max-width:900px){
+    #credits{top:0;left:0;right:0;transform:none;max-width:none;width:100%;
+             font-size:8px;padding:5px 8px;border-left:0;border-right:0;border-top:0}
+    #ticker{top:64px} #ticker .px{font-size:20px}
+    #feed{top:64px;width:56vw}
+    #camBtn{bottom:88px;right:8px}
+  }
   @media (prefers-reduced-motion:reduce){ #feed .k{animation:none} }
 </style>
 </head>
 <body>
 <div id="scan"></div>
+
+<div class="hud panel" id="credits">
+  <b>SPACE MARINES vs ORKS</b><br>
+  a variation of the original <a href="https://bitcoinbattlefield.com" target="_blank" rel="noopener">Bitcoin Battlefield</a>
+  by <a href="https://x.com/motionbynick" target="_blank" rel="noopener">@motionbynick</a>
+  · character models: <a href="https://kaylousberg.itch.io/kaykit-series-4" target="_blank" rel="noopener">KayKit Mystery Series 4</a>
+</div>
 
 <div class="hud panel" id="ticker">
   <div class="sym">BTCUSDT · LUNAR FRONT<span id="feedmode">SIM</span></div>
@@ -69,6 +93,7 @@
 </div>
 
 <div class="hud" id="feed"></div>
+<button id="camBtn">CAM · AUTO</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -339,8 +364,17 @@ function setAnim(u,name){
   if(u.current) u.current.fadeOut(.18);
   u.current=next;
 }
-function deployModel(gltf,arr){
+function deployModel(gltf,arr,tint){
   const src=gltf.scene;
+  if(tint){ // multiply the texture with a faction colour (e.g. orc green)
+    const seen=new Set();
+    src.traverse(o=>{
+      if(o.isMesh&&o.material){
+        const mats=Array.isArray(o.material)?o.material:[o.material];
+        for(const mt of mats){ if(!seen.has(mt)){ seen.add(mt); if(mt.color) mt.color.multiply(tint); } }
+      }
+    });
+  }
   const bb=new THREE.Box3().setFromObject(src);
   const h=Math.max(bb.max.y-bb.min.y,.001);
   const s=2.9/h;                                  // normalise to soldier height
@@ -382,7 +416,8 @@ function loadScript(src){ return new Promise((res,rej)=>{
     const loader=new THREE.GLTFLoader();
     const load=u=>new Promise((res,rej)=>loader.load(u,res,undefined,()=>rej(new Error('not found: '+u))));
     const [gB,gR]=await Promise.all([load('assets/bull.glb'),load('assets/bear.glb')]);
-    deployModel(gB,bulls); deployModel(gR,bears);
+    deployModel(gB,bulls,null);                                // marines: original colours
+    deployModel(gR,bears,new THREE.Color(0x73f273));           // orks: green wash over the whole model
     console.log('Lunar Front: GLB characters deployed');
   }catch(e){
     console.log('Lunar Front: built-in soldiers active — '+(e&&e.message?e.message:e));
@@ -537,8 +572,49 @@ function ambientFire(dt){
   if(Math.random()<.25) impact(new THREE.Vector3(to.x,1,to.z)); // near-miss dust
 }
 
-/* ---------------- broadcast camera (fully automatic) ---------------- */
-let camFocus=null, shotT=99, shotKind=0, shotSeed=0;
+/* ---------------- broadcast camera + manual override ----------------
+   Drag anywhere to take over the camera (orbit), pinch or scroll to zoom.
+   The CAM button returns to the automatic broadcast direction. */
+let camFocus=null, shotT=99, shotKind=0, shotSeed=0, camAuto=true, lastFx=0;
+const freeCam={theta:1.2,phi:1.1,r:110,target:new THREE.Vector3(0,4,0)};
+const camBtn=$('camBtn');
+function enterFree(){
+  if(!camAuto) return;
+  camAuto=false;
+  freeCam.target.set(lastFx,3,0);
+  const off=camera.position.clone().sub(freeCam.target);
+  freeCam.r=clamp(off.length(),25,340);
+  freeCam.phi=Math.acos(clamp(off.y/freeCam.r,-1,1));
+  freeCam.theta=Math.atan2(off.z,off.x);
+  camBtn.textContent='CAM · FREE'; camBtn.classList.add('free');
+}
+camBtn.onclick=()=>{
+  if(camAuto){ enterFree(); }
+  else{ camAuto=true; shotT=99;
+    camBtn.textContent='CAM · AUTO'; camBtn.classList.remove('free'); }
+};
+const ptr={down:false,x:0,y:0,d2:0};
+const cnv=renderer.domElement;
+cnv.addEventListener('pointerdown',e=>{ptr.down=true;ptr.x=e.clientX;ptr.y=e.clientY;});
+addEventListener('pointerup',()=>ptr.down=false);
+addEventListener('pointermove',e=>{
+  if(!ptr.down) return;
+  const dx=e.clientX-ptr.x, dy=e.clientY-ptr.y;
+  if(camAuto && Math.hypot(dx,dy)>6) enterFree();
+  if(camAuto) return;
+  freeCam.theta+=dx*.005;
+  freeCam.phi=clamp(freeCam.phi-dy*.004,.22,1.52);
+  ptr.x=e.clientX; ptr.y=e.clientY;
+});
+cnv.addEventListener('wheel',e=>{ enterFree();
+  freeCam.r=clamp(freeCam.r*(1+e.deltaY*.001),25,340); e.preventDefault(); },{passive:false});
+cnv.addEventListener('touchstart',e=>{ if(e.touches.length===2)
+  ptr.d2=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
+cnv.addEventListener('touchmove',e=>{ if(e.touches.length===2){
+  const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+  enterFree();
+  freeCam.r=clamp(freeCam.r*(ptr.d2/d),25,340); ptr.d2=d; e.preventDefault(); }},{passive:false});
+
 function newShot(fx){
   shotT=0; shotSeed=Math.random()*1000;
   const r=Math.random();
@@ -552,6 +628,17 @@ function newShot(fx){
   else { shotKind=3; }                                         // objective mast reveal
 }
 function updateCamera(dt,fx){
+  lastFx=fx;
+  if(!camAuto){
+    const t=freeCam.target;
+    t.x += (fx - t.x)*Math.min(1,dt*.5);   // gently keep the battle in frame
+    camera.position.set(
+      t.x+freeCam.r*Math.sin(freeCam.phi)*Math.cos(freeCam.theta),
+      t.y+freeCam.r*Math.cos(freeCam.phi),
+      t.z+freeCam.r*Math.sin(freeCam.phi)*Math.sin(freeCam.theta));
+    camera.lookAt(t);
+    return;
+  }
   shotT+=dt;
   const dur=shotKind===1?9:13;
   if(shotT>dur) newShot(fx);
