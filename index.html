@@ -93,7 +93,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">THE BATTLE FOR BITCOIN</span>
-  <span class="ver" id="ver">1.21</span>
+  <span class="ver" id="ver">1.22</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -131,7 +131,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='1.21';
+const APP_VERSION='1.22';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -164,23 +164,26 @@ sunLight.position.set(-160,70,50); scene.add(sunLight);
 
 /* ---------------- terrain ---------------- */
 const FIELD_X = 100;
+let groundY=(x,z)=>0;
 (function buildGround(){
   const g = new THREE.PlaneGeometry(460, 300, 96, 62);
   g.rotateX(-Math.PI/2);
   const pos = g.attributes.position;
   const craters=[]; for(let i=0;i<10;i++)
     craters.push({x:rand(-200,200), z:rand(-130,130), r:rand(8,18), d:rand(1,2.5)});
-  const cols=[];
-  for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i), z=pos.getZ(i);
-    // rolling dunes
+  groundY=function(x,z){
     let y = Math.sin(x*.03+z*.012)*2.6 + Math.sin(x*.09-z*.05)*1.1 + Math.sin(z*.07)*1.4;
     for(const c of craters){
       const d=Math.hypot(x-c.x,z-c.z);
       if(d<c.r){ const t=d/c.r; y += -c.d*Math.cos(t*Math.PI/2) + c.d*.3*Math.exp(-((t-1)*(t-1))*24); }
     }
     const lane = clamp(1-Math.abs(z)/70,0,1)*clamp(1-Math.abs(x)/130,0,1);
-    y *= (1-lane*.75);
+    return y*(1-lane*.75);
+  };
+  const cols=[];
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i);
+    const y=groundY(x,z);
     pos.setY(i,y);
     const sh = .8 + y*.045 + rand(-.04,.04);   // warm sand
     cols.push(.80*sh, .62*sh, .40*sh);
@@ -219,12 +222,14 @@ const FIELD_X = 100;
   const tail=new THREE.Mesh(new THREE.BoxGeometry(6,5,.7),dark); tail.position.set(-13,2.5,0); ship.add(tail);
   const wingL=new THREE.Mesh(new THREE.BoxGeometry(9,.5,7),dark); wingL.position.set(2,1.5,-6); wingL.rotation.x=.5; ship.add(wingL);
   const wingR=new THREE.Mesh(new THREE.BoxGeometry(9,.5,7),dark); wingR.position.set(4,.8,6.5); ship.add(wingR);
-  ship.position.set(6,1.4,-26); ship.rotation.set(.12,.7,.1);
+  ship.position.set(6,groundY(6,-26)+1.4,-26); ship.rotation.set(.12,.7,.1);
   scene.add(ship);
   // habitat modules to the north
   for(let i=0;i<3;i++){
     const h=new THREE.Mesh(new THREE.CylinderGeometry(4,4,14,12),new THREE.MeshLambertMaterial({color:0xb99a6e}));
-    h.rotation.z=Math.PI/2; h.position.set(-30+i*26, 3.6, 52+rand(-3,3)); h.rotation.y=rand(-.2,.2);
+    h.rotation.z=Math.PI/2;
+    const hx=-30+i*26, hz=52+rand(-3,3);
+    h.position.set(hx, groundY(hx,hz)+3.6, hz); h.rotation.y=rand(-.2,.2);
     scene.add(h);
     const win=new THREE.Mesh(new THREE.BoxGeometry(10,.9,.3),new THREE.MeshBasicMaterial({color:0xcfe7ff}));
     win.position.copy(h.position); win.position.z-=4.05; win.position.y+=1.4; scene.add(win);
@@ -233,7 +238,8 @@ const FIELD_X = 100;
   const crate=new THREE.MeshLambertMaterial({color:0x8f6f4c});
   for(let i=0;i<14;i++){
     const c=new THREE.Mesh(new THREE.BoxGeometry(rand(1.6,3),rand(1.2,2),rand(1.6,3)),crate);
-    c.position.set(rand(-85,85),.8,rand(-46,46)); c.rotation.y=rand(0,3.14);
+    const cx=rand(-85,85), cz=rand(-46,46);
+    c.position.set(cx,groundY(cx,cz)+.8,cz); c.rotation.y=rand(0,3.14);
     scene.add(c);
   }
   // defensive berms at each side's line of departure
@@ -241,7 +247,8 @@ const FIELD_X = 100;
   for(let i=0;i<6;i++){
     for(const s of [-1,1]){
       const b=new THREE.Mesh(new THREE.BoxGeometry(2,1.8,7),bermB);
-      b.position.set(s*FIELD_X+rand(-4,4), .8, (i-2.5)*9);
+      const bx=s*FIELD_X+rand(-4,4), bz=(i-2.5)*9;
+      b.position.set(bx, groundY(bx,bz)+.8, bz);
       b.rotation.y=rand(-.25,.25); b.rotation.z=rand(-.06,.06);
       scene.add(b);
     }
@@ -350,7 +357,7 @@ let flagGeo;
     map:new THREE.CanvasTexture(fc),side:THREE.DoubleSide}));
   flag.position.set(.15,8.7,0);
   grp.add(flag);
-  grp.position.set(5,0,-21);   // off the main lane, in everyone's sightline
+  grp.position.set(5,groundY(5,-21),-21);   // off the main lane, in everyone's sightline
   grp.rotation.y=-.35;
   scene.add(grp);
 })();
@@ -679,7 +686,8 @@ function updateMachines(dt,fx,mom,T){
     const dx=tx-M.grp.position.x;
     M.grp.position.x+=clamp(dx,-14*dt,14*dt);
     if(M.mixer) M.mixer.update(dt);
-    M.grp.position.y=Math.abs(Math.sin(T*3.2))*.35;           // stomp / rumble
+    M.grp.position.y=groundY(M.grp.position.x,M.grp.position.z)
+                     +Math.abs(Math.sin(T*3.2))*.35;          // stomp / rumble
     M.grp.rotation.z=Math.sin(T*3.2)*.02*M.side;
     if(retreat && Math.abs(dx)<2){ M.active=false; M.grp.visible=false; continue; }
     M.shot-=dt;
@@ -996,14 +1004,15 @@ function animate(){
 
   for(const u of units){
     const m=u.root;
+    const gy=groundY(m.position.x,m.position.z);
     if(!u.alive){
       const since=T-u.deadAt;
       if(u.actions&&u.actions.death){
         u.mixer.update(dt);                                   // play out the death anim
-        m.position.y=-Math.min(1.3,Math.max(0,since-1.9)*1.1); // then sink into the regolith
+        m.position.y=gy-Math.min(1.3,Math.max(0,since-1.9)*1.1); // then sink into the sand
       }else{
         m.rotation.z=u.side*Math.min(1,since*3.5)*Math.PI/2*.92;
-        m.position.y=-Math.min(1.2,Math.max(0,since-1.8)*1.2);
+        m.position.y=gy-Math.min(1.2,Math.max(0,since-1.8)*1.2);
       }
       if(T>u.respawnAt){
         u.alive=true; m.rotation.z=0; m.position.y=0;
@@ -1026,13 +1035,13 @@ function animate(){
     if(u.mixer){
       u.mixer.update(dt);
       setAnim(u,moving?'run':'fire');
-      m.position.y=0; m.rotation.x=0;
+      m.position.y=gy; m.rotation.x=0;
       m.rotation.y=(u.side>0?0:Math.PI)+Math.sin(T*.6+u.seed)*.08;
     }else{
-      // low bounding run in lunar gravity; kneel behind cover when static
+      // bounding run; kneel behind cover when static
       u.crouchT+=dt;
       const crouch = !moving && Math.sin(u.crouchT*.5+u.seed)>0.2 ? .35 : 0;
-      m.position.y = moving ? Math.abs(Math.sin(T*5.5+u.seed))*.5 : -crouch;
+      m.position.y = gy + (moving ? Math.abs(Math.sin(T*5.5+u.seed))*.5 : -crouch);
       m.rotation.x = moving ? Math.sin(T*5.5+u.seed)*.06 : (crouch?.18:0);
       m.rotation.y = (u.side>0?0:Math.PI)+Math.sin(T*.6+u.seed)*.1;
     }
