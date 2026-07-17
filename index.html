@@ -92,7 +92,7 @@
 
 <div class="hud panel" id="topbar">
   <span class="ttl">SPACE RANGERS vs ORCS</span>
-  <span class="ver" id="ver">1.18</span>
+  <span class="ver" id="ver">1.19</span>
   <button id="infoBtn" title="Credits & info">i</button>
 </div>
 
@@ -133,7 +133,7 @@
    ============================================================ */
 
 const $ = id => document.getElementById(id);
-const APP_VERSION='1.18';
+const APP_VERSION='1.19';
 $('ver').textContent=APP_VERSION;
 console.log('Desert Front '+APP_VERSION);
 $('infoBtn').onclick=()=>{ const p=$('infoPanel'); p.hidden=!p.hidden; };
@@ -489,7 +489,7 @@ function deployModel(gltf,arr,tint,weapons,style,sideKey){
     sideStyle[sideKey]=melee?'melee':'ranged';
     if(melee) for(const u of arr) u.depth=Math.max(2.5,u.depth-4);   // melee army presses in
   }
-  let wi=0;
+  let wi=0, armed=0, slotName='';
   for(const u of arr){
     const inst=THREE.SkeletonUtils.clone(src);
     const weapon=(weapons&&weapons.length)? weapons[wi++ % weapons.length] : null;
@@ -498,7 +498,8 @@ function deployModel(gltf,arr,tint,weapons,style,sideKey){
       let slot=null;
       inst.traverse(o=>{ if(!slot && /handslot\.r/i.test(o.name||'')) slot=o; });
       if(!slot) inst.traverse(o=>{ if(!slot && /hand\.r$/i.test(o.name||'')) slot=o; });
-      if(slot) slot.add(w);
+      if(!slot) inst.traverse(o=>{ if(!slot && /hand/i.test(o.name||'')) slot=o; });
+      if(slot){ slot.add(w); armed++; if(!slotName) slotName=slot.name; }
     }
     inst.scale.setScalar(s);
     inst.position.y=-bb.min.y*s;
@@ -518,6 +519,9 @@ function deployModel(gltf,arr,tint,weapons,style,sideKey){
       setAnim(u,'idle');
     }
   }
+  if(weapons&&weapons.length)
+    console.log('[weapons]',(sideKey||'?'),'armed',armed,'of',arr.length,
+                'units','(slot:',slotName||'NONE FOUND',')');
 }
 /* portraits: render each side's character once into the gauge thumbnails */
 function makePortrait(build,imgEl,faceY){
@@ -583,6 +587,8 @@ function loadScript(src){ return new Promise((res,rej)=>{
       loadOpt('assets/weapon_bull.glb'),
       loadOpt('assets/weapon_bear.glb'),
       loadOpt('assets/weapon_bear2.glb')]);
+    console.log('[weapons] rifle:',wB?'loaded':'MISSING',
+                '| axe:',wRa?'loaded':'MISSING','| club:',wRb?'loaded':'MISSING');
     sB.forEach((g,v)=>deployModel(g,bulls.filter((u,i)=>i%sB.length===v),
       null,wB?[wB]:null,'ranged','b'));                            // ranged coalition: rifles
     sR.forEach((g,v)=>deployModel(g,bears.filter((u,i)=>i%sR.length===v),
