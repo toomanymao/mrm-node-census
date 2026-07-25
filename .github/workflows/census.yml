@@ -1,18 +1,5 @@
-SETUP — MRM NODE CENSUS (own crawler, replaces dead bitnodes)
-
-A. Create a NEW PUBLIC repo on GitHub named:  mrm-node-census
-   (public = free unlimited Actions minutes + open-source credibility)
-
-B. Upload crawler.py into its root (the file I gave you).
-
-C. Add file -> Create new file -> filename:
-      .github/workflows/census.yml
-   paste:
-
 name: census
 on:
-  schedule:
-    - cron: "23 */6 * * *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -23,7 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
       - run: python crawler.py 480
       - run: |
           git config user.name census-bot
@@ -31,10 +19,3 @@ jobs:
           git add nodes.json
           git diff --cached --quiet || git commit -m "census snapshot"
           git push
-
-D. Actions tab -> census -> Run workflow. Watch the log:
-   it prints seeded count, handshake total, Knots count, and the
-   top-10 user agents (fun to screenshot for X).
-
-E. Result lives at:
-   https://raw.githubusercontent.com/toomanymao/mrm-node-census/main/nodes.json
