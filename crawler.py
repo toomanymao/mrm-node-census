@@ -7,13 +7,16 @@ v2: clearnet IPv4/IPv6 + Tor v3 onion services.
     - negotiates sendaddrv2 (BIP 155) so peers relay onion addresses
     - parses torv3 entries from addrv2 and derives .onion hostnames
     - dials .onion peers through a local Tor daemon (SOCKS5 on 127.0.0.1:9050)
+    - persists discovered onion addresses (onions.json) so each run starts warm
+      instead of rediscovering the Tor side from scratch
     Results carry a per-network breakdown; total/knots stay combined for the site.
 """
 import asyncio, socket, struct, hashlib, json, time, random, re, sys, base64
 
 MAGIC = bytes.fromhex("f9beb4d9")          # mainnet
 PROTO = 70016
-BUDGET_S = int(sys.argv[1]) if len(sys.argv) > 1 else 900   # crawl budget (seconds)
+BUDGET_S = int(sys.argv[1]) if len(sys.argv) > 1 else 1800  # crawl budget (seconds)
+ONION_CACHE = "onions.json"                 # onion addresses carried between runs
 CLEAR_CONNS = 300                           # concurrent clearnet dials
 TOR_CONNS = 100                             # concurrent Tor circuits (be kind to the daemon)
 DIAL_TIMEOUT = 6                            # clearnet
@@ -173,6 +176,12 @@ async def worker(q):
 async def main():
     global deadline
     deadline=time.time()+BUDGET_S
+    try:  # warm start: onion addresses discovered by previous runs
+        for h,p in json.load(open(ONION_CACHE)):
+            enqueue((h,int(p)))
+        print(f"[census] warm cache: {tor_q.qsize()} onion addresses loaded")
+    except Exception:
+        print("[census] no onion cache yet — cold start on Tor")
     for s in SEEDS:
         try:
             for fam,_,_,_,sa in socket.getaddrinfo(s,8333,proto=socket.IPPROTO_TCP):
@@ -200,10 +209,13 @@ async def main():
         print(f"[census]   {c:5d}  {ua}")
     out={"total":total,"knots":knots,
          "updated":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
-         "method":"mrm-census v2 - clearnet + Tor reachable (addrv2 crawl)",
+         "method":"mrm-census v2.1 - clearnet + Tor reachable (addrv2 crawl, warm onion cache)",
          "clearnet":{"total":ct,"knots":ck},
          "tor":{"total":tt,"knots":tk}}
     with open("nodes.json","w") as f: json.dump(out,f)
     print("[census] wrote nodes.json:", out)
+    onions=sorted(hp for hp in seen if hp[0].endswith(".onion"))[:30000]
+    with open(ONION_CACHE,"w") as f: json.dump([[h,p] for h,p in onions],f)
+    print(f"[census] cached {len(onions)} onion addresses for the next run")
 
 asyncio.run(main())
