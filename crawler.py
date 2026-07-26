@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
 mrm-node-census — a minimal recursive Bitcoin P2P crawler.
-Handshakes reachable clearnet nodes, records user agents, counts Knots share.
-v1: IPv4/IPv6 clearnet only (no Tor yet) — results are labeled accordingly.
+Handshakes reachable nodes, records user agents, counts Knots share.
+
+v2: clearnet IPv4/IPv6 + Tor v3 onion services.
+    - negotiates sendaddrv2 (BIP 155) so peers relay onion addresses
+    - parses torv3 entries from addrv2 and derives .onion hostnames
+    - dials .onion peers through a local Tor daemon (SOCKS5 on 127.0.0.1:9050)
+    Results carry a per-network breakdown; total/knots stay combined for the site.
 """
-import asyncio, socket, struct, hashlib, json, time, random, re, sys
+import asyncio, socket, struct, hashlib, json, time, random, re, sys, base64
 
 MAGIC = bytes.fromhex("f9beb4d9")          # mainnet
 PROTO = 70016
-BUDGET_S = int(sys.argv[1]) if len(sys.argv) > 1 else 480   # crawl budget (seconds)
-CONNS = 400                                 # concurrent dials
-DIAL_TIMEOUT = 6
+BUDGET_S = int(sys.argv[1]) if len(sys.argv) > 1 else 900   # crawl budget (seconds)
+CLEAR_CONNS = 300                           # concurrent clearnet dials
+TOR_CONNS = 100                             # concurrent Tor circuits (be kind to the daemon)
+DIAL_TIMEOUT = 6                            # clearnet
+TOR_DIAL_TIMEOUT = 25                       # onion circuits are slow to build
+READ_WINDOW = 8                             # clearnet post-handshake listen (s)
+TOR_READ_WINDOW = 15
+SOCKS_HOST, SOCKS_PORT = "127.0.0.1", 9050
 SEEDS = ["seed.bitcoin.sipa.be","dnsseed.bluematt.me","seed.bitcoinstats.com",
          "seed.btc.petertodd.org","seed.bitcoin.sprovoost.nl","dnsseed.emzy.de",
          "seed.bitcoin.wiz.biz"]
@@ -24,7 +34,7 @@ def version_payload():
     ts = int(time.time())
     addr = struct.pack("<Q", 0) + b"\x00"*10 + b"\xff\xff" + b"\x00"*4 + struct.pack(">H", 0)
     nonce = random.getrandbits(64)
-    ua = b"\x10/mrm-census:0.1/"           # varint(16) + string
+    ua = b"\x10/mrm-census:0.2/"           # varint(16) + string
     return (struct.pack("<iQq", PROTO, 0, ts) + addr + addr +
             struct.pack("<Q", nonce) + ua + struct.pack("<i", 0) + b"\x00")
 
@@ -49,6 +59,13 @@ def parse_version_ua(p):
     i = 80
     n, i = read_varint(p, i)
     return p[i:i+n].decode(errors="replace")
+
+def onion_v3(pubkey):
+    """torv3 spec: onion = base32(PUBKEY | CHECKSUM | VERSION), checksum =
+    sha3_256(".onion checksum" | PUBKEY | VERSION)[:2], VERSION = 0x03."""
+    ver = b"\x03"
+    chk = hashlib.sha3_256(b".onion checksum" + pubkey + ver).digest()[:2]
+    return base64.b32encode(pubkey + chk + ver).decode().lower() + ".onion"
 
 def parse_addr(p):
     out=[]; n,i = read_varint(p,0)
@@ -76,33 +93,70 @@ def parse_addrv2(p):
         elif net == 2 and alen == 16:
             try: out.append((socket.inet_ntop(socket.AF_INET6, raw), port))
             except OSError: pass
-        # net 4 = torv3 — collected in v2 of this crawler
+        elif net == 4 and alen == 32:        # torv3 — the whole point of v2
+            out.append((onion_v3(raw), port))
+        # net 3 = torv2 (dead network), 5 = i2p, 6 = cjdns — skipped
     return out
 
-seen=set(); frontier=asyncio.Queue(); agents={}; deadline=0
+async def open_via_tor(host, port):
+    """Minimal SOCKS5 CONNECT through the local Tor daemon (hostname resolved
+    inside Tor, so .onion works). No auth — standard tor package default."""
+    r, w = await asyncio.open_connection(SOCKS_HOST, SOCKS_PORT)
+    try:
+        w.write(b"\x05\x01\x00"); await w.drain()
+        if await r.readexactly(2) != b"\x05\x00": raise OSError("socks: auth refused")
+        hb = host.encode()
+        w.write(b"\x05\x01\x00\x03" + bytes([len(hb)]) + hb + struct.pack(">H", port))
+        await w.drain()
+        rep = await r.readexactly(4)
+        if rep[1] != 0: raise OSError(f"socks: connect failed ({rep[1]})")
+        atyp = rep[3]                        # drain the bound-address field
+        if atyp == 1: await r.readexactly(6)
+        elif atyp == 3:
+            ln = (await r.readexactly(1))[0]; await r.readexactly(ln + 2)
+        elif atyp == 4: await r.readexactly(18)
+        return r, w
+    except BaseException:
+        w.close()
+        raise
+
+clear_q=asyncio.Queue(); tor_q=asyncio.Queue()
+seen=set(); agents={}; deadline=0
+
+def enqueue(hp):
+    if hp in seen or len(seen) >= 120000: return
+    seen.add(hp)
+    (tor_q if hp[0].endswith(".onion") else clear_q).put_nowait(hp)
 
 async def probe(host, port):
-    r=w=None
+    tor = host.endswith(".onion")
+    w=None
     try:
-        r, w = await asyncio.wait_for(asyncio.open_connection(host, port), DIAL_TIMEOUT)
+        if tor:
+            r, w = await asyncio.wait_for(open_via_tor(host, port), TOR_DIAL_TIMEOUT)
+        else:
+            r, w = await asyncio.wait_for(asyncio.open_connection(host, port), DIAL_TIMEOUT)
         w.write(msg(b"version", version_payload())); await w.drain()
-        got_ver=False
-        end=time.time()+8
+        got_ver=got_ack=sent_getaddr=False
+        window = TOR_READ_WINDOW if tor else READ_WINDOW
+        end=time.time()+window
         while time.time()<end:
-            cmd, p = await asyncio.wait_for(read_msg(r), 8)
+            cmd, p = await asyncio.wait_for(read_msg(r), window)
             if cmd=="version":
                 agents[f"{host}:{port}"]=parse_version_ua(p); got_ver=True
-                w.write(msg(b"verack")); await w.drain()
-            elif cmd=="verack" and got_ver:
-                w.write(msg(b"getaddr")); await w.drain()
+                # BIP 155: sendaddrv2 must go out after version, before verack —
+                # without it peers will never relay onion addresses to us
+                w.write(msg(b"sendaddrv2")); w.write(msg(b"verack")); await w.drain()
+            elif cmd=="verack":
+                got_ack=True
             elif cmd in ("addr","addrv2"):
                 peers = parse_addr(p) if cmd=="addr" else parse_addrv2(p)
-                for hp in peers:
-                    if hp not in seen and len(seen)<60000:
-                        seen.add(hp); frontier.put_nowait(hp)
+                for hp in peers: enqueue(hp)
                 if len(peers)>5: break       # got a real addr batch — done here
             elif cmd=="ping":
                 w.write(msg(b"pong", p)); await w.drain()
+            if got_ver and got_ack and not sent_getaddr:
+                w.write(msg(b"getaddr")); await w.drain(); sent_getaddr=True
     except Exception:
         pass
     finally:
@@ -110,9 +164,9 @@ async def probe(host, port):
             try: w.close()
             except Exception: pass
 
-async def worker():
+async def worker(q):
     while time.time()<deadline:
-        try: host,port = await asyncio.wait_for(frontier.get(), 3)
+        try: host,port = await asyncio.wait_for(q.get(), 3)
         except asyncio.TimeoutError: return
         await probe(host,port)
 
@@ -122,21 +176,33 @@ async def main():
     for s in SEEDS:
         try:
             for fam,_,_,_,sa in socket.getaddrinfo(s,8333,proto=socket.IPPROTO_TCP):
-                hp=(sa[0],8333)
-                if hp not in seen: seen.add(hp); frontier.put_nowait(hp)
+                enqueue((sa[0],8333))
         except OSError: pass
-    print(f"[census] seeded {frontier.qsize()} addresses; budget {BUDGET_S}s")
-    await asyncio.gather(*[worker() for _ in range(CONNS)])
-    total=len(agents)
-    knots=sum(1 for ua in agents.values() if re.search(r"knots", ua, re.I))
-    print(f"[census] handshaked {total} reachable nodes; {knots} Knots")
+    tor_up=True
+    try: (await asyncio.wait_for(asyncio.open_connection(SOCKS_HOST,SOCKS_PORT),3))[1].close()
+    except Exception:
+        tor_up=False
+        print("[census] WARNING: no Tor SOCKS on 9050 — onion peers will be collected but not dialed")
+    print(f"[census] seeded {clear_q.qsize()} addresses; budget {BUDGET_S}s; tor={'up' if tor_up else 'DOWN'}")
+    workers=[worker(clear_q) for _ in range(CLEAR_CONNS)]
+    if tor_up: workers+=[worker(tor_q) for _ in range(TOR_CONNS)]
+    await asyncio.gather(*workers)
+    is_tor=lambda k: ".onion:" in k
+    ct=sum(1 for k in agents if not is_tor(k)); tt=len(agents)-ct
+    kn=lambda keys: sum(1 for k in keys if re.search(r"knots", agents[k], re.I))
+    ck=kn([k for k in agents if not is_tor(k)]); tk=kn([k for k in agents if is_tor(k)])
+    total=len(agents); knots=ck+tk
+    print(f"[census] handshaked {total} reachable ({ct} clearnet + {tt} tor); {knots} Knots ({ck}+{tk})")
+    print(f"[census] onion addresses discovered: {sum(1 for hp in seen if hp[0].endswith('.onion'))}")
     top={}
     for ua in agents.values(): top[ua]=top.get(ua,0)+1
     for ua,c in sorted(top.items(), key=lambda x:-x[1])[:10]:
         print(f"[census]   {c:5d}  {ua}")
     out={"total":total,"knots":knots,
          "updated":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
-         "method":"mrm-census v1 - clearnet reachable (getaddr crawl, no Tor)"}
+         "method":"mrm-census v2 - clearnet + Tor reachable (addrv2 crawl)",
+         "clearnet":{"total":ct,"knots":ck},
+         "tor":{"total":tt,"knots":tk}}
     with open("nodes.json","w") as f: json.dump(out,f)
     print("[census] wrote nodes.json:", out)
 
