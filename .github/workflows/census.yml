@@ -1,21 +1,40 @@
 name: census
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
 permissions:
   contents: write
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python crawler.py 480
+      - name: install and start tor
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tor
+          sudo service tor start || sudo systemctl start tor
+      - name: wait for tor socks port
+        run: |
+          for i in $(seq 1 45); do
+            if python3 -c "import socket; socket.create_connection(('127.0.0.1',9050),2).close()" 2>/dev/null; then
+              echo "tor socks is up"; exit 0
+            fi
+            sleep 2
+          done
+          echo "tor never came up — crawling clearnet only"
+      - name: extra grace for tor bootstrap
+        run: sleep 20
+      - run: python crawler.py 900
       - run: |
           git config user.name census-bot
           git config user.email bot@users.noreply.github.com
+          git pull --rebase || true
           git add nodes.json
           git diff --cached --quiet || git commit -m "census snapshot"
           git push
