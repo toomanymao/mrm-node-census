@@ -8,7 +8,7 @@ permissions:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,11 +30,11 @@ jobs:
           echo "tor never came up — crawling clearnet only"
       - name: extra grace for tor bootstrap
         run: sleep 20
-      - run: python crawler.py 900
+      - run: python crawler.py 1800
       - run: |
           git config user.name census-bot
           git config user.email bot@users.noreply.github.com
           git pull --rebase || true
-          git add nodes.json
+          git add nodes.json onions.json
           git diff --cached --quiet || git commit -m "census snapshot"
           git push
