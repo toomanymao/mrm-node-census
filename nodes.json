@@ -1,1 +1,1 @@
-{"total": 6223, "knots": 715, "updated": "2026-09-01T05:51:28Z", "method": "mrm-census v2.1 - clearnet + Tor reachable (addrv2 crawl, warm onion cache)", "clearnet": {"total": 6145, "knots": 701}, "tor": {"total": 78, "knots": 14}}
+{"total": 6120, "knots": 689, "updated": "2026-09-01T12:19:35Z", "method": "mrm-census v2.1 - clearnet + Tor reachable (addrv2 crawl, warm onion cache)", "clearnet": {"total": 6040, "knots": 676}, "tor": {"total": 80, "knots": 13}}
